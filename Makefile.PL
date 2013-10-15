@@ -2,11 +2,13 @@ use ExtUtils::MakeMaker;
 
 use 5.008;
 
+my $version = '0.21';
+
 WriteMakefile
  ( NAME	 	=> 'Any::Daemon::HTTP'
- , VERSION	=> '0.20'
+ , VERSION	=> $version
  , PREREQ_PM    =>
-   { Any::Daemon      => '0.91'
+   { Any::Daemon      => '0.92'
    , URI              => 0
    , Encode           => 0
    , English          => 0
