@@ -1,4 +1,34 @@
 ===== version history for Any::Daemon::HTTP
 
+version 0.21: Tue Oct 15 12:20:59 CEST 2013
+	Changes:
+	- handlers are called with $vhost as first parameter, which is more
+	  natural: they are defined in the VirtualHost object.
+	- group peer information in ::Session
+	- rewrite routine gets $vhost as first parameter
+
+	Fixes:
+	- on error, fill the response content with some text, otherwise
+	  browsers will not show it.
+	- addVirtualHost with only a PACKAGE is useless
+
+	Improvements:
+	- considerably more docs.
+	- fixes in handler parameter checking.
+	- add ::VirtualHost::addHandlers() as alternive to ::addHandler()
+	- ::Directory(location) can be relative (to cwd)
+	- ::HTTP::new(on_error)
+	- handlers can be called as method name
+	- ::HTTP::new(session_class)
+	- ::Directory(rewrite) can now have METHOD and HASH parameters
+	- ::VirtualHost::redirect()
+	- ::VirtualHost::new(redirect) and mustRedirect()
+
+version 0.20: Fri Oct 11 12:34:41 CEST 2013
+	Changes:
+	- major rewrite, most existing code will still work.
+	  Much of the code has been taken from HTTP::Server::*, but then
+	  for a non-multiplexing server core.
+
 version 0.10: Tue Jul  9 17:42:29 CEST 2013
-	- initial release (older code)
+	- initial release (the main components of the code are much older)

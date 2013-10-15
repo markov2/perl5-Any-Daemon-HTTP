@@ -1,6 +1,11 @@
 ChangeLog
 MANIFEST
 Makefile.PL
+examples/apache.pl
 lib/Any/Daemon/HTTP.pm
+lib/Any/Daemon/HTTP/Directory.pm
+lib/Any/Daemon/HTTP/Session.pm
+lib/Any/Daemon/HTTP/UserDirs.pm
+lib/Any/Daemon/HTTP/VirtualHost.pm
 t/01use.t
 xt/99pod.t

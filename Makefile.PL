@@ -4,14 +4,28 @@ use 5.008;
 
 WriteMakefile
  ( NAME	 	=> 'Any::Daemon::HTTP'
- , VERSION	=> '0.10'
+ , VERSION	=> '0.20'
  , PREREQ_PM    =>
-   { Log::Report      => '0.90'
-   , Any::Daemon      => '0.90'
+   { Any::Daemon      => '0.91'
+   , URI              => 0
+   , Encode           => 0
+   , English          => 0
+   , Fcntl            => 0
+   , File::Basename   => 0
+   , File::Spec       => 0
    , HTTP::Daemon     => '6.01'
+   , HTTP::Response   => 0
+   , HTTP::Status     => 0
    , IO::Socket       => 0
    , IO::Socket::INET => 0
-   , File::Basename   => 0
+   , List::Util       => 0
+   , Log::Report      => '0.90'
+   , Log::Report      => 0
+   , MIME::Types      => 0
+   , Net::CIDR        => 0
+   , POSIX            => 0
+   , Scalar::Util     => 0
+   , Socket           => 0
    }
 
  , EXE_FILES    => []
