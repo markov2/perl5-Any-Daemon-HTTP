@@ -1,5 +1,19 @@
 ===== version history for Any::Daemon::HTTP
 
+version 0.22: Mon Oct 28 10:18:38 CET 2013
+	Fixes:
+	- socket listens only on tcp
+	- return HTTP_NO_CONTENT if the handler does not return anything
+
+	Improvements:
+	- show example how to create a Template::Toolkit handler.
+	- ::HTTP::new(vhost_class)
+	- support etag and modified testing on static files
+	- put connection info in the ps output
+	- cache-control dynamic data via md5
+	- feature and limitation description for this server
+	- remove unused "allow" in vhost
+
 version 0.21: Tue Oct 15 12:20:59 CEST 2013
 	Changes:
 	- handlers are called with $vhost as first parameter, which is more

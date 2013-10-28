@@ -77,16 +77,7 @@ The HTTP/1.1 protocol implementation of M<HTTP::Daemon> is (ab)used.
 Please support my development work by submitting bug-reports, patches
 and (if available) a donation.
 
-=section Limitations
-
-Of course, the wishlist (of missing features) is quite long.  To list
-the most important limitations of the current implementation:
-
-=over 4
-=item only one socket
-You can currently only use one socket, either plain or SSL.
-=item no proxy support
-=back
+See L</DETAILS> for a list of features and limitations.
 
 =chapter METHODS
 
@@ -144,6 +135,13 @@ been produced.  The result of this function should be the new response
 [0.21] The PACKAGE must extend the default class.  The extended class may
 be used to implement loading and saving session information, or adding
 abstraction.
+
+=option  vhost_class PACKAGE
+=default vhost_class M<Any::Daemon::HTTP::VirtualHost>
+[0.22] The PACKAGE must extend the default class.  See the
+L<Any::Daemon::HTTP::VirtualHost/DETAILS> about creating your own virtual
+hosts.
+
 =cut
 
 sub _to_list($) { ref $_[0] eq 'ARRAY' ? @{$_[0]} : defined $_[0] ? $_[0] : () }
@@ -170,6 +168,7 @@ sub init($)
           , Listen    => SOMAXCONN
           , Reuse     => 1
           , Type      => SOCK_STREAM
+          , Proto     => 'tcp'
           ) or fault "cannot create socket at $host";
     }
 
@@ -182,6 +181,8 @@ sub init($)
 
     $self->{ADH_session_class}
       = $args->{session_class} || 'Any::Daemon::HTTP::Session';
+    $self->{ADH_vhost_class}
+      = $args->{vhost_class}   || 'Any::Daemon::HTTP::VirtualHost';
 
     $self->{ADH_ssl}     = $use_ssl;
     $self->{ADH_socket}  = $socket;
@@ -270,7 +271,7 @@ sub addVirtualHost(@)
     {   $vhost = $config;
     }
     elsif(UNIVERSAL::isa($config, 'HASH'))
-    {   $vhost = Any::Daemon::HTTP::VirtualHost->new($config);
+    {   $vhost = $self->{ADH_vhost_class}->new($config);
     }
     else
     {   error __x"virtual configuration not a valid object not HASH";
@@ -335,8 +336,15 @@ sub _connection($$)
 
     my $session = $self->{ADH_session_class}->new(client => $client);
     my $peer    = $session->get('peer');
-    info __x"new client from {host} on {ip}"
-       , host => $peer->{host}, ip => $peer->{ip};
+    my ($host, $ip) = @{$peer}{'host', 'ip'};
+    info __x"new client from {host} on {ip}", host => $host, ip => $ip;
+
+    # Change title in ps-table
+    my $title = $0;
+    $title    =~ s/ .*//;
+    $title   .= " http from $host";
+    $title   .= " ip $ip" if $ip ne $host;
+    $0        = $title;
 
     $args->{new_connection}->($self, $session);
 
@@ -391,10 +399,17 @@ sub run(%)
         $first->addHandler('/' => $handler);
     }
 
+    my $title        = $0;
+    $title           =~ s/ .*//;
+    my $conn_count   = 0;
     $args{child_task} ||=  sub {
+        $0 = "$title unused";
+       
         while(my $client = $self->socket->accept)
-        {   $self->_connection($client, \%args);
+        {   $conn_count++;
+            $self->_connection($client, \%args);
             $client->close;
+            $0 = "$title idle after $conn_count";
         }
         exit 0;
     };
@@ -412,3 +427,66 @@ sub url()
 sub product_tokens() {shift->{ADH_server}}
 
 1;
+
+__END__
+=chapter DETAILS
+
+=section Server supported features
+Many often used features are supported
+
+=over 4
+=item * HTTP/1.1 protocol
+Supported by via the M<HTTP::Daemon> connection implementation, which
+is gracefully hijacked.  Messages are M<HTTP::Request> and M<HTTP::Response>
+objects, borrowed from LWP.
+
+=item * virtual hosts
+Multiple "hosts" listening on the same port, abstracted in
+M<Any::Daemon::HTTP::VirtualHost> objects.  The vhosts have a
+name and may have a number of aliases.
+
+=item * directories per VirtualHost 
+One or more "directory" configurations may be added, which may be
+nested.  They are represened by a M<Any::Daemon::HTTP::Directory> objects.
+Each "directory" maps a "path" in the request to a directory on disk.  
+
+=item * allow/deny per Directory
+Supports CIDR and hostname based access restrictions.
+
+=item * directory lists per Directory
+When permitted and no C<index.html> file is found, a listing is generated.
+
+=item * user directories per VirtualHost 
+One directory object can be a M<Any::Daemon::HTTP::UserDirs>, managing
+user directories (request paths which start with C</~$username>)
+
+=item * static content caching
+Reduce retransmitting files, supporting C<ETag> and C<Last-Modified>.
+
+=item * rewrite rules per VirtualHost
+Translate incoming request paths into new paths in the same vhost.
+
+=item * redirection rules per VirtualHost
+Translate incoming request paths into browser redirects.
+
+=item * dynamic content handlers per VirtualHost
+When there is no matching file, a handler will be called to produce the
+required information.  The default handler will produce 404 errors.
+
+=item * dynamic content caching
+Reduce transmitting dynamic content using C<ETag> and C<MD5>'s
+
+=back
+
+=section Server limitations
+
+Of course, the wishlist (of missing features) is quite long.  To list
+the most important limitations of the current implementation:
+
+=over 4
+=item * only one socket
+You can currently only use one socket, either plain or SSL.
+
+=item * no proxy support
+=back
+=cut

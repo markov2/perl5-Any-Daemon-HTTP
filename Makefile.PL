@@ -2,7 +2,7 @@ use ExtUtils::MakeMaker;
 
 use 5.008;
 
-my $version = '0.21';
+my $version = '0.22';
 
 WriteMakefile
  ( NAME	 	=> 'Any::Daemon::HTTP'
@@ -28,6 +28,7 @@ WriteMakefile
    , POSIX            => 0
    , Scalar::Util     => 0
    , Socket           => 0
+   , Digest::MD5      => '2.53'
    }
 
  , EXE_FILES    => []

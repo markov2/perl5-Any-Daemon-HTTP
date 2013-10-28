@@ -53,4 +53,7 @@ sub client() {shift->{ADHC_client}}
 sub get(@)   {my $s = shift->{ADHC_store}; wantarray ? @{$s}{@_} : $s->{$_[0]}}
 sub set($$)  {$_[0]->{ADHC_store}{$_[1]} = $_[2]}
 
+# should not be used
+sub _store() {shift->{ADHC_store}}
+
 1;

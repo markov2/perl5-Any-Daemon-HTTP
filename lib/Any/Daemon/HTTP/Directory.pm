@@ -6,6 +6,7 @@ use Log::Report  'any-daemon-http';
 
 use Net::CIDR      qw/cidrlookup/;
 use File::Spec     ();
+use File::Basename qw/dirname/;
 use Fcntl          qw/:mode/;
 use POSIX          qw/strftime/;
 use HTTP::Status   qw/:constants/;
@@ -64,7 +65,9 @@ absolute file or directory name.
 =option   allow   CIDR|HOSTNAME|DOMAIN|CODE|ARRAY
 =default  allow   <undef>
 Allow all requests which pass any of these parameters, and none
-of the deny parameters.  See L</Allow access>.
+of the deny parameters.  See L</Allow access>.  B<Be warned> that
+the access rights are not inherited from directory configurations
+encapsulating this one.
 
 =option   deny    CIDR|HOSTNAME|DOMAIN|CODE|ARRAY
 =default  deny    <undef>
@@ -136,7 +139,7 @@ sub location() {shift->{ADHD_location}}
 #-----------------
 =section Permissions
 
-=method allow CLIENT, SESSION, REQUEST, URI
+=method allow SESSION, REQUEST, URI
 BE WARNED that the URI is the rewrite of the REQUEST uri, and therefore
 you should use that URI.  The SESSION represents a user.
 
@@ -192,13 +195,12 @@ sub _filename_trans($$)
 
 =method fromDisk SESSION, REQUEST, URI
 Try to produce a response (M<HTTP::Response>) for something inside this
-directory structure.  C<undef> is returned if nothing useful is fount.
+directory structure.  C<undef> is returned if nothing useful is found.
 =cut
 
 sub fromDisk($$$)
 {   my ($self, $session, $req, $uri) = @_;
 
-    # first check access rights
     $self->allow($session, $req, $uri)
         or return HTTP::Response->new(HTTP_FORBIDDEN);
 
@@ -234,13 +236,21 @@ sub _file_response($$)
     -f $fn
         or return HTTP::Response->new(HTTP_NOT_FOUND);
 
-    my $mtime     = (stat $fn)[9];
-    my $has_mtime = $req->if_modified_since;
-    return HTTP::Response->new(HTTP_NOT_MODIFIED)
-        if defined $has_mtime && $has_mtime >= $mtime;
-
     open my($fh), '<:raw', $fn
         or return HTTP::Response->new(HTTP_FORBIDDEN);
+
+    my ($dev, $inode, $mtime) = (stat $fh)[0,1,9];
+    my $etag      = "$dev-$inode-$mtime";
+
+    my $has_etag  = $req->header('If-None_Match');
+    return HTTP::Response->new(HTTP_NOT_MODIFIED, 'match etag')
+        if defined $has_etag && $has_etag eq $etag;
+
+    my $has_mtime = $req->if_modified_since;
+    return HTTP::Response->new(HTTP_NOT_MODIFIED, 'unchanged')
+        if defined $has_mtime && $has_mtime >= $mtime;
+
+    my $head = HTTP::Headers->new;
 
     my $ct;
     if(my $mime = $mimetypes->mimeTypeOf($fn))
@@ -251,10 +261,13 @@ sub _file_response($$)
     {   $ct  = 'binary/octet-stream';
     }
 
+    $head->content_type($ct);
+    $head->last_modified($mtime);
+    $head->header(ETag => $etag);
+
     local $/;
-    my $resp = HTTP::Response
-       ->new(HTTP_OK, undef, ['Content-Type' => $ct], <$fh>);
-    $resp->last_modified($mtime);
+    my $resp = HTTP::Response->new(HTTP_OK, undef, $head, <$fh>);
+
     $resp;
 }
 
@@ -410,10 +423,11 @@ sub list($@)
 The M<allow()> method handles access rights.  When a trueth value is
 produced, then access is permitted.
 
-The base class implements access rules via the C<allow> or C<deny>
-option of M<new()>.  These parameters are exclusive (which is slightly
-different from Apache); you can either allow or deny, but not both at
-the same time.
+The base class implements access rules via the C<allow> or C<deny> option
+of M<new()>.  These parameters are exclusive (which is slightly different
+from Apache); you can either allow or deny, but not both at the same time.
+B<Be warned> that the access rights are also not inherited from directory
+configurations encapsulating this one.
 
 The parameters to C<allow> or C<deny> are an ARRAY with any combination of
 =over 4
