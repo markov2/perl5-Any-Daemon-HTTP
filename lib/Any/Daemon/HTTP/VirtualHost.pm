@@ -6,6 +6,7 @@ use Log::Report    'any-daemon-http';
 
 use Any::Daemon::HTTP::Directory;
 use Any::Daemon::HTTP::UserDirs;
+use Any::Daemon::HTTP::Proxy;
 
 use HTTP::Status qw/:constants/;
 use List::Util   qw/first/;
@@ -93,6 +94,11 @@ M<Any::Daemon::HTTP::UserDirs> is created for you, with
 standard Apache behavior.  You may provide your own OBJECT.  Without
 this parameter, there are no public user pages.
 
+=option   proxies OBJECT|HASH|ARRAY
+=default  proxies C<undef>
+Pass one or more M<Any::Daemon::HTTP::Proxy> OBJECTS, or HASHes which
+will be used to initialize them.
+
 =option   handlers CODE|HASH
 =default  handlers {}
 The keys are path names, part of the request URIs.  The values are
@@ -115,17 +121,21 @@ sub init($)
     defined $name
         or error __x"virtual host {pkg} has no name", pkg => ref $self;
 
-    my $aliases = $args->{aliases}            || [];
+    my $aliases = $args->{aliases} || [];
     $self->{ADHV_aliases}  = ref $aliases eq 'ARRAY' ? $aliases : [$aliases];
     $self->{ADHV_handlers} = $args->{handler} || $args->{handlers} || {};
     $self->{ADHV_rewrite}  = $self->_rewrite_call($args->{rewrite});
     $self->{ADHV_redirect} = $self->_redirect_call($args->{redirect});
     $self->{ADHV_udirs}    = $self->_user_dirs($args->{user_dirs});
 
-    $self->{ADHV_dirs}     = {};
+    $self->{ADHV_sources}     = {};
     $self->_auto_docs($args->{documents});
     my $dirs = $args->{directories} || [];
     $self->addDirectory($_) for ref $dirs eq 'ARRAY' ? @$dirs : $dirs;
+
+    $self->{ADHV_proxies}  = {};
+    my $proxies = $args->{proxies}  || [];
+    $self->addProxy($_) for ref $proxies eq 'ARRAY' ? @$proxies : $proxies;
 
     $self;
 }
@@ -246,11 +256,12 @@ sub findHandler(@)
     sub {HTTP::Response->new(HTTP_NOT_FOUND)}
 }
 
+#-----------------
 =section Access permissions
 =cut
 
-#-----------------
 
+#-----------------
 =method handleRequest SERVER, SESSION, REQUEST, [URI]
 =cut
 
@@ -270,18 +281,18 @@ sub handleRequest($$$;$)
         $uri = $new_uri;
     }
 
-    my $path = $uri->path;
+    my $path   = $uri->path;
     info __x"{vhost} request {path}", vhost => $self->name, path => $uri->path;
 
-    my @path = $uri->path_segments;
-    my $tree = $self->directoryOf(@path);
+    my @path   = $uri->path_segments;
+    my $source = $self->sourceFor(@path);
 
     # static content?
-    my $resp = $tree->fromDisk($session, $req, $uri);
+    my $resp   = $source ? $source->collect($self, $session, $req,$uri) : undef;
     return $resp if $resp;
 
     # dynamic content
-    $resp = $self->findHandler(@path)->($self, $session, $req, $uri, $tree);
+    $resp = $self->findHandler(@path)->($self, $session, $req, $uri, $source);
     $resp or return HTTP::Response->new(HTTP_NO_CONTENT);
 
     $resp->code eq HTTP_OK
@@ -386,6 +397,30 @@ sub _redirect_call($)
       , ref => (ref $red || $red), vhost => $self->name;
 }
 
+=method addSource SOURCE
+The SOURCE objects extend M<Any::Daemon::HTTP::Source>, for instance a
+C<::Directory> or a C<::Proxy>.  You can find them back via M<sourceFor()>.
+=cut
+
+sub addSource($)
+{   my ($self, $source) = @_;
+    $source or return;
+
+    my $sources = $self->{ADHV_sources};
+    my $path    = $source->path;
+
+    if(my $old = exists $sources->{$path})
+    {   error __x"vhost {name} directory `{path}' defined twice, for `{old}' and `{new}' "
+           , name => $self->name, path => $path
+           , old => $old->name, new => $source->name;
+    }
+
+    info __x"add configuration `{name}' to {vhost} for {path}"
+      , name => $source->name, vhost => $self->name, path => $path;
+
+    $sources->{$path} = $source;
+}
+
 #------------------
 =section Directories
 
@@ -396,7 +431,7 @@ C<undef> is not possible.
 
 sub filename($)
 {   my ($self, $uri) = @_;
-    my $dir = $self->directoryOf($uri);
+    my $dir = $self->sourceFor($uri);
     $dir ? $dir->filename($uri->path) : undef;
 }
 
@@ -411,35 +446,52 @@ sub addDirectory(@)
     my $dir  = @_==1 && blessed $_[0] ? shift
        : Any::Daemon::HTTP::Directory->new(@_);
 
-    my $path = $dir->path || '';
-    !exists $self->{ADHV_dirs}{$path}
-        or error __x"vhost {name} directory `{path}' defined twice"
-             , name => $self->name, path => $path;
-
-    info __x"add directory configuration to {vhost} for {path}"
-      , vhost => $self->name, path => $path;
-
-    $self->{ADHV_dirs}{$path} = $dir;
+    $self->addSource($dir);
 }
 
-=method directoryOf PATH|PATH_SEGMENTS
-Find the best matching M<Any::Daemon::HTTP::Directory> object.
+=method sourceFor PATH|PATH_SEGMENTS
+Find the best matching M<Any::Daemon::HTTP::Source> object, which
+might be a C<::UserDirs>, a C<::Directory>, or a C<::Proxy>.
 =cut
 
-sub directoryOf(@)
+sub sourceFor(@)
 {   my $self  = shift;
     my @path  = @_>1 || index($_[0], '/')==-1 ? @_ : split('/', $_[0]);
 
     return $self->{ADHV_udirs}
         if substr($path[0], 0, 1) eq '~';
 
-    my $dirs = $self->{ADHV_dirs};
+    my $sources = $self->{ADHV_sources};
     while(@path)
-    {   my $dir = $dirs->{join '/', @path};
+    {   my $dir = $sources->{join '/', @path};
         return $dir if $dir;
         pop @path;
     }
-    $dirs->{'/'} ? $dirs->{'/'} : ();
+    $sources->{'/'} ? $sources->{'/'} : ();
+}
+
+#-----------------------------
+=section Proxies
+
+=method addProxy OBJECT|HASH|OPTIONS
+Either pass a M<Any::Daemon::HTTP::Proxy> OBJECT or the OPTIONS to
+create the object.  When OPTIONS are provided, they are passed to
+M<Any::Daemon::HTTP::Proxy::new()> to create the OBJECT.
+=cut
+
+sub addProxy(@)
+{   my $self  = shift;
+    my $proxy = @_==1 && blessed $_[0] ? shift
+       : Any::Daemon::HTTP::Proxy->new(@_);
+
+    error __x"proxy {name} has a map, so cannot be added to a vhost"
+      , name => $proxy->name
+        if $proxy->forwardMap;
+
+    info __x"add proxy configuration to {vhost} for {path}"
+      , vhost => $self->name, path => $proxy->path;
+
+    $self->addSource($proxy);
 }
 
 #-----------------------------
@@ -574,7 +626,8 @@ object (the only parameter) or a new URI object.
 
 =section Using Template::Toolkit
  
-Connecting this server with TT is quite simple:
+Connecting this server to the popular M<Template::Toolkit> webpage
+framework is quite simple:
 
   # Use TT only for pages under /status
   $vhost->addHandler('/status' => 'ttStatus');
@@ -591,8 +644,11 @@ Connecting this server with TT is quite simple:
       HTTP::Response->new(HTTP_OK, undef
         , ['Content-Type' => 'text/html']
         , "$output"
-      );
+        );
   }
+
+See M<Log::Report::Extract::Template> if you need translations
+as well.
 =cut
 
 1;

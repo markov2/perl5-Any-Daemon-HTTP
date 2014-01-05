@@ -5,7 +5,7 @@ package Any::Daemon::HTTP::Session;
 
 use Log::Report    'any-daemon-http';
 
-use Socket         qw(inet_aton AF_INET);
+use Socket         qw(inet_aton AF_INET AF_INET6 PF_INET PF_INET6);
 
 =chapter NAME
 Any::Daemon::HTTP::Session - represents a client connection
@@ -37,7 +37,10 @@ sub init($)
 
     my $peer   = $store->{peer}    ||= {};
     my $ip     = $peer->{ip}       ||= $client->peerhost;
-    $peer->{host} = gethostbyaddr inet_aton($ip), AF_INET;
+    if($client->sockdomain==PF_INET)
+    {   $peer->{host} = gethostbyaddr inet_aton($ip), AF_INET }
+    elsif($client->sockdomain==PF_INET6)
+    {   $peer->{host} = gethostbyaddr $ip, AF_INET6 }
 
     $self;
 }

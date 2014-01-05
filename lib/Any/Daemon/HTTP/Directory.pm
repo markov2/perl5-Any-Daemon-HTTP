@@ -2,9 +2,10 @@ use warnings;
 use strict;
 
 package Any::Daemon::HTTP::Directory;
+use parent 'Any::Daemon::HTTP::Source';
+
 use Log::Report  'any-daemon-http';
 
-use Net::CIDR      qw/cidrlookup/;
 use File::Spec     ();
 use File::Basename qw/dirname/;
 use POSIX::1003    qw/strftime :fd :fs/;
@@ -12,12 +13,9 @@ use HTTP::Status   qw/:constants/;
 use HTTP::Response ();
 use Encode         qw/encode/;
 use MIME::Types    ();
-use List::Util     qw/first/;
 
 my $mimetypes = MIME::Types->new(only_complete => 1);
 
-sub _allow_cleanup($);
-sub _allow_match($$$$);
 sub _filename_trans($$);
 
 =chapter NAME
@@ -38,12 +36,9 @@ Any::Daemon::HTTP::Directory - describe a server directory
    ->new(directories => $root);
 
 =chapter DESCRIPTION
-Each M<Any::Daemon::HTTP::VirtualHost> will define where the files are
-located.  Parts of the URI path can map on different directories,
-with different permissions.
-
-User directories, like used in the URI C<<http://xx/~user/yy>>
-are implemented in M<Any::Daemon::HTTP::UserDirs>.
+Each M<Any::Daemon::HTTP::VirtualHost> will define where the files
+are located.  Parts of the URI path can map on different (virtual)
+directories, with different access rights.
 
 =chapter METHODS
 
@@ -51,26 +46,10 @@ are implemented in M<Any::Daemon::HTTP::UserDirs>.
 
 =c_method new OPTIONS|HASH-of-OPTIONS
 
-=option   path PATH
-=default  path '/'
-If the directory PATH (relative to the document root C<location>) is not
-trailed by a '/', it will be made so.
-
 =requires location DIRECTORY|CODE
 The DIRECTORY to be prefixed before the path of the URI, or a CODE
 reference which will rewrite the path (passed as only parameter) into the
 absolute file or directory name.
-
-=option   allow   CIDR|HOSTNAME|DOMAIN|CODE|ARRAY
-=default  allow   <undef>
-Allow all requests which pass any of these parameters, and none
-of the deny parameters.  See L</Allow access>.  B<Be warned> that
-the access rights are not inherited from directory configurations
-encapsulating this one.
-
-=option   deny    CIDR|HOSTNAME|DOMAIN|CODE|ARRAY
-=default  deny    <undef>
-See C<allow> and L</Allow access>
 
 =option   index_file STRING|ARRAY
 =default  index_file ['index.html', 'index.htm']
@@ -82,18 +61,18 @@ exist.  If so, the content will be shown.
 Enables the display of a directory, when it does not contain one of the
 C<index_file> prepared defaults.
 
-=cut
+=option   charset STRING
+=default  charset C<utf-8>
+The character-set which is used all text-files on the system, used in
+response headers of text-files.
 
-sub new(@)
-{   my $class = shift;
-    my $args  = @_==1 ? shift : +{@_};
-    (bless {}, $class)->init($args);
-}
+=cut
 
 sub init($)
 {   my ($self, $args) = @_;
+    $self->SUPER::init($args);
 
-    my $path = $self->{ADHD_path}  = $args->{path} || '/';
+    my $path = $self->path;
     my $loc  = $args->{location}
         or error __x"directory definition requires location";
 
@@ -114,9 +93,8 @@ sub init($)
 
     $self->{ADHD_loc}   = $loc;
     $self->{ADHD_fn}    = $trans;
-    $self->{ADHD_allow} = _allow_cleanup $args->{allow};
-    $self->{ADHD_deny}  = _allow_cleanup $args->{deny};
     $self->{ADHD_dirlist} = $args->{directory_list} || 0;
+    $self->{ADHD_charset} = $args->{charset} || 'utf-8';
 
     my $if = $args->{index_file};
     my @if = ref $if eq 'ARRAY' ? @$if
@@ -128,53 +106,19 @@ sub init($)
 
 #-----------------
 =section Attributes
-=method path
 =method location
+=method charset
 =cut
 
-sub path()     {shift->{ADHD_path}}
 sub location() {shift->{ADHD_location}}
+sub charset()  {shift->{ADHD_charset}}
 
 #-----------------
 =section Permissions
-
-=method allow SESSION, REQUEST, URI
-BE WARNED that the URI is the rewrite of the REQUEST uri, and therefore
-you should use that URI.  The SESSION represents a user.
-
-See L</Allow access>.
 =cut
 
-sub allow($$$$)
-{   my ($self, $session, $req, $uri) = @_;
-    if(my $allow = $self->{ADHD_allow})
-    {   $self->_allow_match($session, $uri, $allow) or return 0;
-    }
-    if(my $deny = $self->{ADHD_deny})
-    {    $self->_allow_match($session, $uri, $deny) and return 0;
-    }
-    1;
-}
-
-sub _allow_match($$$$)
-{   my ($self, $session, $uri, $rules) = @_;
-    my $peer = $session->get('peer');
-    first { $_->($peer->{ip}, $peer->{host}, $session, $uri) } @$rules;
-}
-
-sub _allow_cleanup($)
-{   my $p = shift or return;
-    my @p;
-    foreach my $r (ref $p eq 'ARRAY' ? @$p : $p)
-    {   push @p
-          , ref $r eq 'CODE'      ? $r
-          : index($r, ':') >= 0   ? sub {cidrlookup $_[0], $r}    # IPv6
-          : $r !~ m/[a-zA-Z]/     ? sub {cidrlookup $_[0], $r}    # IPv4
-          : substr($r,0,1) eq '.' ? sub {$_[1] =~ qr/(^|\.)\Q$r\E$/i} # Domain
-          :                         sub {lc($_[1]) eq lc($r)}     # hostname
-    }
-    @p ? \@p : undef;
-}
+#-----------------------
+=section Actions
 
 =method filename PATH
 Convert a URI PATH into a directory path.  Return C<undef> if not possible.
@@ -192,16 +136,8 @@ sub _filename_trans($$)
       };
 }
 
-=method fromDisk SESSION, REQUEST, URI
-Try to produce a response (M<HTTP::Response>) for something inside this
-directory structure.  C<undef> is returned if nothing useful is found.
-=cut
-
-sub fromDisk($$$)
-{   my ($self, $session, $req, $uri) = @_;
-
-    $self->allow($session, $req, $uri)
-        or return HTTP::Response->new(HTTP_FORBIDDEN);
+sub _collect($$$$)
+{   my ($self, $vhost, $session, $req, $uri) = @_;
 
     my $item = $self->filename($uri);
 
@@ -235,13 +171,13 @@ sub _file_response($$)
     -f $fn
         or return HTTP::Response->new(HTTP_NOT_FOUND);
 
-    open my($fh), '<:raw', $fn
+    open my $fh, '<:raw', $fn
         or return HTTP::Response->new(HTTP_FORBIDDEN);
 
     my ($dev, $inode, $mtime) = (stat $fh)[0,1,9];
     my $etag      = "$dev-$inode-$mtime";
 
-    my $has_etag  = $req->header('If-None_Match');
+    my $has_etag  = $req->header('If-None-Match');
     return HTTP::Response->new(HTTP_NOT_MODIFIED, 'match etag')
         if defined $has_etag && $has_etag eq $etag;
 
@@ -254,7 +190,7 @@ sub _file_response($$)
     my $ct;
     if(my $mime = $mimetypes->mimeTypeOf($fn))
     {   $ct  = $mime->type;
-        $ct .= "; charset='utf8'" if $mime->isAscii;
+        $ct .= '; charset='.$self->charset if $mime->isAscii;
     }
     else
     {   $ct  = 'binary/octet-stream';
@@ -265,9 +201,7 @@ sub _file_response($$)
     $head->header(ETag => $etag);
 
     local $/;
-    my $resp = HTTP::Response->new(HTTP_OK, undef, $head, <$fh>);
-
-    $resp;
+    HTTP::Response->new(HTTP_OK, undef, $head, <$fh>);
 }
 
 sub _list_response($$$)
@@ -284,14 +218,15 @@ sub _list_response($$$)
 __UP
 
     foreach my $item (sort keys %$list)
-    {   my $d = $list->{$item};
+    {   my $d       = $list->{$item};
+        my $symdest = $d->{is_symlink} ? "&rarr; $d->{symlink_dest}" : "";
         push @rows, <<__ROW;
 <tr><td>$d->{flags}</td>
     <td>$d->{user}</td>
     <td>$d->{group}</td>
     <td align="right">$d->{size_nice}</td>
     <td>$d->{mtime_nice}</td>
-    <td><a href="$d->{name}">$d->{name}</a></td></tr>
+    <td><a href="$d->{name}">$d->{name}</a>$symdest</td></tr>
 __ROW
     }
 
@@ -309,7 +244,7 @@ __ROW
 __PAGE
 
     HTTP::Response->new(HTTP_OK, undef
-      , ['Content-Type' => 'text/html; charset="utf8"']
+      , ['Content-Type' => 'text/html; charset='.$self->charset]
       , $content
       );
 }
@@ -393,20 +328,20 @@ sub list($@)
         {   $d{name} .= '/';
         }
 
-        if($d{is_file} || $d{is_directory})
-        {   $d{user}  = $users{$d{uid}} ||= getpwuid $d{uid};
-            $d{group} = $users{$d{gid}} ||= getgrgid $d{gid};
-            my $mode = $d{mode};
-            my $b = $filetype{$mode & S_IFMT} || '?';
-            $b   .= $flags[ ($mode & S_IRWXU) >> 6 ];
-            substr($b, -1, -1) = 's' if $mode & S_ISUID;
-            $b   .= $flags[ ($mode & S_IRWXG) >> 3 ];
-            substr($b, -1, -1) = 's' if $mode & S_ISGID;
-            $b   .= $flags[  $mode & S_IRWXO ];
-            substr($b, -1, -1) = 't' if $mode & S_ISVTX;
-            $d{flags}      = $b;
-            $d{mtime_nice} = strftime "%F %T", localtime $d{mtime};
-        }
+        $d{user}  = $users{$d{uid}} ||= getpwuid $d{uid};
+        $d{group} = $users{$d{gid}} ||= getgrgid $d{gid};
+
+        my $mode = $d{mode};
+        my $b = $filetype{$mode & S_IFMT} || '?';
+        $b   .= $flags[ ($mode & S_IRWXU) >> 6 ];
+        substr($b, -1, -1) = 's' if $mode & S_ISUID;
+        $b   .= $flags[ ($mode & S_IRWXG) >> 3 ];
+        substr($b, -1, -1) = 's' if $mode & S_ISGID;
+        $b   .= $flags[  $mode & S_IRWXO ];
+        substr($b, -1, -1) = 't' if $mode & S_ISVTX;
+        $d{flags}      = $b;
+        $d{mtime_nice} = strftime "%F %T", localtime $d{mtime};
+
         $dirlist{$name} = \%d;
     }
     \%dirlist;
@@ -414,66 +349,6 @@ sub list($@)
 
 #-----------------------
 =chapter DETAILS
-
-=section Directory limits
-
-=subsection Allow access
-
-The M<allow()> method handles access rights.  When a trueth value is
-produced, then access is permitted.
-
-The base class implements access rules via the C<allow> or C<deny> option
-of M<new()>.  These parameters are exclusive (which is slightly different
-from Apache); you can either allow or deny, but not both at the same time.
-B<Be warned> that the access rights are also not inherited from directory
-configurations encapsulating this one.
-
-The parameters to C<allow> or C<deny> are an ARRAY with any combination of
-=over 4
-=item IPv4 and IPv6 address ranges in CIDR notation
-=item hostname
-=item domain name (leading dot)
-=item your own CODE reference, which will be called with the IP address,
-  the hostname, the session, and the rewritten URI.
-=back
-
-=example new(allow) parameters
- MyVHOST->new( allow =>
-    [ '192.168.2.1/32         # IPv4 CIDR, single address
-    , '10/8'                  # IPv4 CIDR
-    , '10.0.0.0-10.3.255.255' # IPv4 range
-    , '::dead:beef:0:0/110'   # IPv6 range
-    , 'www.example.com'       # hostname
-    , '.example.com'          # domain and subdomains
-    , 'example.com'           # only this domain
-    ], ...
-
-=example create own access rules
-If you have an ::VirtualHost extension class, you do this:
-
- sub allow($$$)
- {   my ($self, $session, $request, $uri) = @_;
-
-     # General rules may refuse access already
-     $self->SUPER::allow($session, $request, $uri)
-         or return 0;
-
-     # here your own checks
-     # $session is a Any::Daemon::HTTP::Session
-     # $request is a HTTP::Request
-     # $uri     is a URI::
-
-     1;
- }
-
-You may also pass a code-ref to M<new(allow)>:
-
- Any::Daemon::HTTP::VirtualHost->new(allow => \&my_rules);
-
- sub my_rules($$$$)   # called before each request
- {   my ($ip, $host, $session, $uri) = @_;
-     # return true if access is permitted
- }
 
 =section Return of list()
 

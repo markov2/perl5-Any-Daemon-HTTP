@@ -28,6 +28,11 @@ my %os_opts  =
 my %run_opts =
   ( background => 1
   , max_childs => 1
+# , max_conn_per_child =>  10_000
+# , max_req_per_child  => 100_000
+# , max_req_per_conn   => 100
+# , max_time_per_conn  => 120
+# , req_time_bonus     =>   5
   );
 
 my %net_opts =
@@ -52,8 +57,8 @@ $run_opts{background} //= 1;
 
 # From now on, all errors and warnings are also sent to syslog,
 # provided by Log::Report. Output still also to the screen.
-#dispatcher SYSLOG => 'syslog', accept => 'INFO-'
-#  , identity => 'any-httpd', facility => 'local0';
+dispatcher SYSLOG => 'syslog', accept => 'INFO-'
+  , identity => 'any-httpd', facility => 'local0';
 
 # Do not send info to the terminal anymore
 #dispatcher close => 'default';
@@ -67,6 +72,10 @@ my $httpd = Any::Daemon::HTTP->new
       [ X_Daemon => 'my-daemon v3'
       , X_More   => 'later'
       ]
+
+# , proxies     =>
+#    { forward_map    => 'RELAY'
+#    }
   );
 
 ## Simpelest, auto-creates ::Directory
@@ -77,20 +86,24 @@ my $httpd = Any::Daemon::HTTP->new
 #   );
 
 ## More complex, add one or more ::Directory's by config or object
-$httpd->addVirtualHost
+my $vhost = $httpd->addVirtualHost
   ( name        => 'test'
-  , aliases     => ['www.test.nl', 'www.example.org', $net_opts{host}]
+  , aliases     => ['www.test.nl', 'www.example.org', $net_opts{host}, 'default']
+
   , directories =>
      { path           => '/'
      , location       => '/etc'
      , directory_list => 1
 #    , allow          => '127.0.0.1/32'
      }
-  , handlers    =>                   # Handlers run where no file is found
-     { '/fake.cgi'    => \&fake_cgi  # is function in of my program ;-)
+
+  , handlers    =>                   # Handlers run when no file is found
+     { '/fake.cgi'    => \&fake_cgi  # looks like cgi, is internal function ;-)
      , '/form/submit' => \&form_in   # match all uri start with this
-#    , '/'            => \&errors    # overrule default 404
+#    , '/'            => \&errors    # overrule default error page
      }
+
+# , proxies     =>
   );
 
 $httpd->run

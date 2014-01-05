@@ -1,5 +1,32 @@
 ===== version history for Any::Daemon::HTTP
 
+wishlist:
+	- reverse proxy
+
+version 0.24: Sun Jan  5 17:38:19 CET 2014
+	Changes:
+	- removed ::HTTP::new(use_ssl), now detected from portnumber
+	- move to Log::Report 1.00
+	- use IO::Socket::IP, to support IPv6
+
+	Fixes:
+	- no warning when request does not have Host
+	- show destination and owner of symlinks
+	- vhost not finding directory.
+	  rt.cpan.org#91672 [Kenney Westerhof]
+
+	Improvements:	
+	- ::Directory make charset configurable.
+	- minor cleanups after demo at Perl Mongers A'dam meeting
+	- now multiple ports possible
+	- deprecate ::HTTP::new(host) and ::new(socket) for new option
+	  new(listen).
+	- add ::HTTP::run(max_conn_per_child)
+	- extracted ::HTTP::Source as base from ::HTTP::Directory
+	- add ::HTTP::Proxy
+	- ::Directory and ::Proxy objects share the "sources" path
+	  mapping.
+
 version 0.23: Thu Nov 28 15:36:45 CET 2013
 	Improvement:
 	- move towards POSIX::1003

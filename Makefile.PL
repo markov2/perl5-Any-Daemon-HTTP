@@ -2,13 +2,13 @@ use ExtUtils::MakeMaker;
 
 use 5.008;
 
-my $version = '0.23';
+my $version = '0.24';
 
 WriteMakefile
  ( NAME	 	=> 'Any::Daemon::HTTP'
  , VERSION	=> $version
  , PREREQ_PM    =>
-   { Any::Daemon      => '0.92'
+   { Any::Daemon      => '0.93'
    , URI              => 0
    , Encode           => 0
    , English          => 0
@@ -18,11 +18,11 @@ WriteMakefile
    , HTTP::Daemon     => '6.01'
    , HTTP::Response   => 0
    , HTTP::Status     => 0
+   , IO::Select       => 0
    , IO::Socket       => 0
-   , IO::Socket::INET => 0
+   , IO::Socket::IP   => 0
    , List::Util       => 0
-   , Log::Report      => '0.90'
-   , Log::Report      => 0
+   , Log::Report      => '1.00'
    , MIME::Types      => 0
    , Net::CIDR        => 0
    , POSIX::1003      => '0.96'

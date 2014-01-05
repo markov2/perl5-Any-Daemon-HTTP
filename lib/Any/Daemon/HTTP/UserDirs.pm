@@ -70,7 +70,6 @@ sub userdirRewrite($$$)
 {   my ($self, $udsub, $allow, $deny) = @_;
     my %homes;  # cache
     sub { my $path = shift;
-panic;
           my ($user, $pathinfo) = $path =~ m!^/\~([^/]*)(.*)!;
           return if keys %$allow && !$allow->{$user};
           return if keys %$deny  &&  $deny->{$user};
