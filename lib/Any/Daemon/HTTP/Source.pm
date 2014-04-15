@@ -45,7 +45,7 @@ M<Any::Daemon::HTTP::Proxy>.
 
 =section Constructors
 
-=c_method new OPTIONS|HASH-of-OPTIONS
+=c_method new %options|\%options
 
 =option   path PATH
 =default  path '/'
@@ -95,9 +95,9 @@ sub name()     {shift->{ADHS_name}}
 #-----------------
 =section Permissions
 
-=method allow SESSION, REQUEST, URI
-BE WARNED that the URI is the rewrite of the REQUEST uri, and therefore
-you should use that URI.  The SESSION represents a user.
+=method allow $session, $request, $uri
+BE WARNED that the $uri is the rewrite of the $request uri, and therefore
+you should use that $uri.  The $session represents a user.
 
 See L</Allow access>.
 =cut
@@ -133,7 +133,7 @@ sub _allow_cleanup($)
     @p ? \@p : undef;
 }
 
-=method collect VHOST, SESSION, REQUEST, URI
+=method collect $vhost, $session, $request, $uri
 Try to produce a response (M<HTTP::Response>) for something inside this
 directory structure.  C<undef> is returned if nothing useful is found.
 =cut

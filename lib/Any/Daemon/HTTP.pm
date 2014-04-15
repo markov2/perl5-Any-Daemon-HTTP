@@ -4,7 +4,7 @@ use strict;
 package Any::Daemon::HTTP;
 use base 'Any::Daemon';
 
-use Log::Report    'any-daemon-http';
+use Log::Report      'any-daemon-http';
 
 use Any::Daemon::HTTP::VirtualHost ();
 use Any::Daemon::HTTP::Session     ();
@@ -18,6 +18,7 @@ use IO::Select       ();
 use File::Basename   qw/basename/;
 use File::Spec       ();
 use Scalar::Util     qw/blessed/;
+use Errno            qw/EADDRINUSE/;
 
 use constant
   { PROTO_HTTP  => 80
@@ -36,6 +37,8 @@ Any::Daemon::HTTP - preforking Apache/Plack-like webserver
   # Simpelest
   #
 
+  use Log::Report;
+  use Any::Daemon::HTTP;
   my $http = Any::Daemon::HTTP->new
     ( handler   => \&handler
     , listen    => 'server.example.com:80'
@@ -51,6 +54,8 @@ Any::Daemon::HTTP - preforking Apache/Plack-like webserver
   # Clean style
   #
 
+  use Log::Report;
+  use Any::Daemon::HTTP;
   my $http = Any::Daemon::HTTP->new
     ( listen    => 'server.example.com:80'
     );
@@ -91,7 +96,7 @@ and (if available) a donation.
 
 =chapter METHODS
 
-=c_method new OPTIONS
+=c_method new %options
 Also see the option descriptions of M<Any::Daemon::new()>.
 
 When C<documents> or C<handler> is passed, then a virtual host will
@@ -111,19 +116,21 @@ available.
 =default documents C<undef>
 See M<Any::Daemon::HTTP::VirtualHost::new(documents)>.
 
-=option  vhosts  VHOST|HASH-of-OPTIONS|PACKAGE|ARRAY
+=option  vhosts  VHOST|PACKAGE|\%options|ARRAY
 =default vhosts  <default>
-For OPTIONS, see M<addVirtualHost()>.  Provide one or an ARRAY of
-virtual host configurations, either by M<Any::Daemon::HTTP::VirtualHost>
-objects or by the OPTIONS to create such objects.  [0.24] You can also
-use the option name C<vhost>.
+The %options are passed to M<addVirtualHost()>, to create a virtual host
+object under fly.  You may also pass an initialized
+M<Any::Daemon::HTTP::VirtualHost> object, or a PACKAGE name to be used
+for the default vhost.  An ARRAY contains a mixture of vhost definitions.
+[0.24] Same as option C<vhost>.
 
-=option  proxies  VHOST|HASH-of-OPTIONS|PACKAGE|ARRAY
+=option  proxies  PROXY|PACKAGE|\%options|ARRAY
 =default proxies  <default>
-[0.24] For OPTIONS, see M<addProxy()>.  Provide one or an ARRAY of
-proxy configurations, either by M<Any::Daemon::HTTP::Proxy>
-objects or by the OPTIONS to create such objects.  You can also
-use the option name C<proxy>.
+[0.24] For %options, see M<addProxy()>.
+The %options are passed to M<addProxy()>, to create a proxy
+object under fly.  You may also pass an M<Any::Daemon::HTTP::Proxy>
+objects or by the %options to create such objects.  An ARRAY contains a
+mixture of proxy definitions.  Same as option C<proxy>.
 
 =option  handlers CODE|HASH
 =default handlers C<undef>
@@ -233,15 +240,37 @@ sub _create_socket($)
     {   $sock_class = 'IO::Socket::IP';
     }
 
-    my $socket = $sock_class->new
-      ( LocalHost => $host
-      , LocalPort => $port
-      , Listen    => SOMAXCONN
-      , Reuse     => 1
-      , Type      => SOCK_STREAM
-      , Proto     => 'tcp'
-      ) or fault __x"cannot create socket at {address}"
+    # Wait max 60 seconds to get the socket
+    # You should be able to reduce the time to wait by setting linger
+    # on the socket in the process which has opened the socket before.
+    my ($socket, $elapse);
+    foreach my $retry (1..60)
+    {   $elapse = $retry -1;
+
+        $socket = $sock_class->new
+          ( LocalHost => $host
+          , LocalPort => $port
+          , Listen    => SOMAXCONN
+          , Reuse     => 1
+          , Type      => SOCK_STREAM
+          , Proto     => 'tcp'
+          );
+
+        last if $socket || $! != EADDRINUSE;
+
+        notice __x"waiting for socket at {address} to become available"
+          , address => "$host:$port"
+            if $retry==1;
+
+        sleep 1;
+    }
+
+    $socket
+        or fault __x"cannot create socket at {address}"
              , address => "$host:$port";
+
+    notice __x"got socket after {secs} seconds", secs => $elapse
+        if $elapse;
 
     ($socket, "$listen:$port", $socket->sockhost.':'.$socket->sockport);
 }
@@ -270,15 +299,15 @@ reports that it accepts the request.  If this all fails, then the request
 is redirected to the host named (or aliased) 'default'.  As last resort,
 you get an error.
 
-=method addVirtualHost VHOST|HASH-of-OPTIONS|OPTIONS
+=method addVirtualHost $vhost|\%options|%options
 
 Adds a new virtual host to the knowledge of the daemon.  Can be used
 at run-time, until the daemon goes into 'run' mode (starts forking
 childs)  The added virtual host object is returned.
 
-The VHOST is an already prepared VirtualHost object.  With a (HASH-of)
-OPTIONS, the VirtualHost object gets created for you with those OPTIONS.
-See M<Any::Daemon::HTTP::VirtualHost::new()> for OPTIONS.
+The $vhost is an already prepared VirtualHost object.  With %options,
+the VirtualHost object gets created for you with those %options.
+See M<Any::Daemon::HTTP::VirtualHost::new()> for %options.
 
 See the manual page for M<Any::Daemon::HTTP::VirtualHost> on how you
 can cleanly extend the class for your own purpose.
@@ -326,7 +355,7 @@ sub addVirtualHost(@)
     $vhost;
 }
 
-=method addProxy OBJECT|HASH-of-OPTIONS|OPTIONS
+=method addProxy $object|\%options|%options
 Add a M<Any::Daemon::HTTP::Proxy> object which has a C<proxy_map>,
 about how to handle requests for incoming hosts.  The proxy settings
 will be tried in order of addition, only when there are no virtual
@@ -352,7 +381,7 @@ sub addProxy(@)
     push @{$self->{ADH_proxies}}, $proxy;
 }
 
-=method removeVirtualHost VHOST|NAME|ALIAS
+=method removeVirtualHost $vhost|$name|$alias
 Remove all name and alias registrations for the indicated virtual host.
 Silently ignores non-existing vhosts.  The removed virtual host object
 is returned.
@@ -369,8 +398,8 @@ sub removeVirtualHost($)
     $vhost;
 }
 
-=method virtualHost NAME
-Find the virtual host with the NAME or alias.  Returns the
+=method virtualHost $name
+Find the virtual host with the $name or alias.  Returns the
 M<Any::Daemon::HTTP::VirtualHost> or C<undef>.
 =cut
 
@@ -382,8 +411,8 @@ sub virtualHost($) { $_[0]->{ADH_vhosts}{$_[1]} }
 
 sub proxies() { @{shift->{ADH_proxies}} }
 
-=method findProxy SESSION, REQUEST, HOST
-[0.24] Find the first proxy which is mapping the URI of the REQUEST.  Returns a
+=method findProxy $session, $request, $host
+[0.24] Find the first proxy which is mapping the URI of the $request.  Returns a
 pair, containing the proxy and the location where it points to.
 
 Usually, in a proxy, the request needs to be in absolute form in the
@@ -404,7 +433,7 @@ sub findProxy($$$)
 #-------------------
 =section Action
 
-=method run OPTIONS
+=method run %options
 
 When there is no vhost yet, one will be created.  When only one vhost
 is active, you may pass C<handle_request> (see the vhost docs).
@@ -461,10 +490,11 @@ of the server may fail with "socket already in use".
 
 sub _connection($$)
 {   my ($self, $client, $args) = @_;
-    my $nr_req  = 0;
-    my $max_req = $args->{max_req_per_conn} || 100;
-    my $start   = my $deadline = time + ($args->{max_time_per_conn} || 120);
-    my $bonus   = $args->{req_time_bonus} // 2;
+    my $nr_req   = 0;
+    my $max_req  = $args->{max_req_per_conn} || 100;
+    my $start    = time;
+    my $deadline = $start + ($args->{max_time_per_conn} || 120);
+    my $bonus    = $args->{req_time_bonus} // 2;
 
     my $conn_class = $client->isa('IO::Socket::SSL')
       ? 'HTTP::Daemon::ClientConn::SSL' : 'HTTP::Daemon::ClientConn';
@@ -578,7 +608,7 @@ sub run(%)
         {
             foreach my $socket (@ready)
             {   my $client = $socket->accept or next;
-                $client->sockopt(SO_LINGER, (pack "ii", 1, $linger))
+                $client->sockopt(SO_LINGER, (pack "II", 1, $linger))
                     if defined $linger;
 
                 $0 = "$title, handling "

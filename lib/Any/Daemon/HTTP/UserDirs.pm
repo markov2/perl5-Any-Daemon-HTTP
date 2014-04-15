@@ -26,7 +26,7 @@ Each M<Any::Daemon::HTTP::VirtualHost> may define user directories.
 
 =section Constructors
 
-=c_method new OPTIONS|HASH-of-OPTIONS
+=c_method new %options|\%options
 
 =default  path <ignored>
 

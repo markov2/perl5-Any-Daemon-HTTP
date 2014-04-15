@@ -21,7 +21,7 @@ to cache information as well.
 
 =section Constructors
 
-=c_method new OPTIONS
+=c_method new %options
 
 =requires client IO::Socket-client
 
@@ -48,8 +48,8 @@ sub init($)
 #-----------------
 =section Accessors
 =method client
-=method get NAMES
-=method set NAME, VALUE
+=method get $names
+=method set $name, $value
 =cut
 
 sub client() {shift->{ADHC_client}}

@@ -4,6 +4,7 @@ use strict;
 
 use Test::More tests => 7;
 
+use Log::Report;
 use_ok('Any::Daemon::HTTP');
 use_ok('Any::Daemon::HTTP::Source');
 use_ok('Any::Daemon::HTTP::Directory');

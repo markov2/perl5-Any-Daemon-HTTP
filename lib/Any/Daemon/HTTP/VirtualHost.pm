@@ -54,11 +54,11 @@ form C< /~user/ >) and one for data outside the user space.
 You may avoid the creation of extension classes for each virtual host,
 by using these options.
 
-=c_method new OPTIONS|HASH-of-OPTIONS
+=c_method new %options|\%options
 
 =requires name    HOSTNAME
 
-=option   aliases HOSTNAME|ARRAY-of-HOSTNAMES
+=option   aliases HOSTNAME|ARRAY
 =default  aliases []
 
 =option   rewrite CODE|METHOD|HASH
@@ -186,18 +186,21 @@ sub aliases() {@{shift->{ADHV_aliases}}}
 #---------------------
 =section Handler
 
-=method addHandler CODE|(PATH => CODE)-LIST|HASH
+=method addHandler CODE|$method|$map|HASH
 Handlers are called to dynamically generate responses, for instance
 to fill-in templates.  The L</DETAILS> section below explains how
 handlers work.
 
 When only CODE is given, then this will be the default handler for all
-paths (under '/', top).  You may also pass a list or HASH of PAIRS.
-[0.21] CODE may also be a method name.
+paths (under '/', top). [0.21] CODE may also be a $method name.
+
+Usually, you pass a $map as PAIRS or as HASH, relating PATH names inside
+the virtual host into function references or method names to be used for
+that tree.
 
 =example
-  $vhost->addHandler('/' => \&default_handler,
-      '/upload' => \&upload_handler);
+  $vhost->addHandler('/' => \&default_handler
+     , '/upload' => \&upload_handler);
 
   $vhost->addHandler(\&default_handler);
 
@@ -233,13 +236,16 @@ sub addHandler(@)
     $h;
 }
 
-=method addHandlers PARAMS
+=method addHandlers $params
 Same as M<addHandler()>.
 =cut
 
 *addHandlers = \&addHandler;
 
-=method findHandler URI|PATH|PATH-SEGMENTS
+=method findHandler $uri|$path|@segments
+Find the handler which matches the given $uri best.  The $uri is the
+rewritten URI of the request, an M<URI> object.  It's $path is sufficient,
+may also be broken into path @segments already.
 =cut
 
 sub findHandler(@)
@@ -253,7 +259,7 @@ sub findHandler(@)
         pop @path;
     }
     
-    sub {HTTP::Response->new(HTTP_NOT_FOUND)}
+    sub { HTTP::Response->new(HTTP_NOT_FOUND) };
 }
 
 #-----------------
@@ -262,7 +268,7 @@ sub findHandler(@)
 
 
 #-----------------
-=method handleRequest SERVER, SESSION, REQUEST, [URI]
+=method handleRequest $server, $session, $request, [$uri]
 =cut
 
 sub handleRequest($$$;$)
@@ -311,9 +317,9 @@ sub handleRequest($$$;$)
 #----------------------
 =section Basic daemon actions
 
-=method rewrite URI
-Returns an URI object as result, which may be the original in case of
-no rewrite was needed.  See L</URI Rewrite>.
+=method rewrite $uri
+Returns an $uri object as result, which may be the original in case of
+no rewrite was needed.  See L</$uri Rewrite>.
 =cut
 
 sub rewrite($) { $_[0]->{ADHV_rewrite}->(@_) }
@@ -344,8 +350,8 @@ sub _rewrite_call($)
       , ref => (ref $rew || $rew), vhost => $self->name;
 }
 
-=method redirect URI, [HTTP_CODE]
-[0.21] Returns an M<HTTP::Response> object of the URI.
+=method redirect $uri, [$http_code]
+[0.21] Returns an M<HTTP::Response> object of the $uri.
 =cut
 
 sub redirect($;$)
@@ -355,8 +361,8 @@ sub redirect($;$)
     );
 }
 
-=method mustRedirect URI
-[0.21] Returns an M<HTTP::Response> object if the URI needs to be
+=method mustRedirect $uri
+[0.21] Returns an M<HTTP::Response> object if the $uri needs to be
 redirected, according to the vhost configuration.
 =cut
 
@@ -397,8 +403,8 @@ sub _redirect_call($)
       , ref => (ref $red || $red), vhost => $self->name;
 }
 
-=method addSource SOURCE
-The SOURCE objects extend M<Any::Daemon::HTTP::Source>, for instance a
+=method addSource $source
+The $source objects extend M<Any::Daemon::HTTP::Source>, for instance a
 C<::Directory> or a C<::Proxy>.  You can find them back via M<sourceFor()>.
 =cut
 
@@ -424,8 +430,8 @@ sub addSource($)
 #------------------
 =section Directories
 
-=method filename URI
-Translate the URI into a filename, without checking for existence.  Returns
+=method filename $uri
+Translate the $uri into a filename, without checking for existence.  Returns
 C<undef> is not possible.
 =cut
 
@@ -435,10 +441,10 @@ sub filename($)
     $dir ? $dir->filename($uri->path) : undef;
 }
 
-=method addDirectory OBJECT|HASH|OPTIONS
-Either pass a M<Any::Daemon::HTTP::Directory> OBJECT or the OPTIONS to
-create the object.  When OPTIONS are provided, they are passed to
-M<Any::Daemon::HTTP::Directory::new()> to create the OBJECT.
+=method addDirectory $object|HASH|%options
+Either pass a M<Any::Daemon::HTTP::Directory> $object or the %options to
+create the object.  When %options are provided, they are passed to
+M<Any::Daemon::HTTP::Directory::new()> to create the $object.
 =cut
 
 sub addDirectory(@)
@@ -449,7 +455,7 @@ sub addDirectory(@)
     $self->addSource($dir);
 }
 
-=method sourceFor PATH|PATH_SEGMENTS
+=method sourceFor $path|$path_segments
 Find the best matching M<Any::Daemon::HTTP::Source> object, which
 might be a C<::UserDirs>, a C<::Directory>, or a C<::Proxy>.
 =cut
@@ -467,16 +473,18 @@ sub sourceFor(@)
         return $dir if $dir;
         pop @path;
     }
+
+    # return empty list, not undef, when not found
     $sources->{'/'} ? $sources->{'/'} : ();
 }
 
 #-----------------------------
 =section Proxies
 
-=method addProxy OBJECT|HASH|OPTIONS
-Either pass a M<Any::Daemon::HTTP::Proxy> OBJECT or the OPTIONS to
-create the object.  When OPTIONS are provided, they are passed to
-M<Any::Daemon::HTTP::Proxy::new()> to create the OBJECT.
+=method addProxy $object|HASH|%options
+Either pass a M<Any::Daemon::HTTP::Proxy> $object or the %options to
+create the object.  When %options are provided, they are passed to
+M<Any::Daemon::HTTP::Proxy::new()> to create the $object.
 =cut
 
 sub addProxy(@)

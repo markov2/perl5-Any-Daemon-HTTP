@@ -44,7 +44,7 @@ directories, with different access rights.
 
 =section Constructors
 
-=c_method new OPTIONS|HASH-of-OPTIONS
+=c_method new %options|\%options
 
 =requires location DIRECTORY|CODE
 The DIRECTORY to be prefixed before the path of the URI, or a CODE
@@ -120,8 +120,8 @@ sub charset()  {shift->{ADHD_charset}}
 #-----------------------
 =section Actions
 
-=method filename PATH
-Convert a URI PATH into a directory path.  Return C<undef> if not possible.
+=method filename $path
+Convert a URI $path into a directory path.  Return C<undef> if not possible.
 =cut
 
 sub filename($) { $_[0]->{ADHD_fn}->($_[1]) }
@@ -249,8 +249,8 @@ __PAGE
       );
 }
 
-=method list DIRECTORY, OPTIONS
-Returns a HASH with information about the DIRECTORY content.  This may
+=method list $directory, %options
+Returns a HASH with information about the $directory content.  This may
 be passed into some template or the default template.  See L</Return of
 directoryList> about the returned output.
 

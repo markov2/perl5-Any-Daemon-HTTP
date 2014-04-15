@@ -47,7 +47,7 @@ can be removed explicitly).
 
 =section Constructors
 
-=c_method new OPTIONS|HASH-of-OPTIONS
+=c_method new %options|\%options
 
 A proxy has either a C<path> various, in which case it is part of
 a single VirtualHost, or has a C<forward_map> when it becomes a child
@@ -151,8 +151,8 @@ sub userAgent() {shift->{ADHDP_ua}}
 sub via()       {shift->{ADHDP_via}}
 sub forwardMap(){shift->{ADHDP_map}}
 
-=method remoteProxy SESSION, REQUEST
-Returns the remote proxy to be used for REQUEST.  If not set, then there
+=method remoteProxy $session, $request
+Returns the remote proxy to be used for $request.  If not set, then there
 is direct connection to the destination.
 =cut
 
@@ -205,7 +205,7 @@ sub _collect($$$$)
     $resp;
 }
 
-=method stripHeaders MESSAGE, NAME|REGEX|ARRAY|CODE|LIST
+=method stripHeaders $message, $name|Regexp|ARRAY|CODE|LIST
 Convert a specification about which headers should be stripped into
 a singled CODE reference to remove the specified fields from a request
 (to a proxy) or response (by the proxy).
@@ -236,8 +236,8 @@ sub stripHeaders(@)
     sub { my $header = $_[1]->headers; $_->($header) for @strip };
 }
 
-=method addHeaders MESSAGE, PAIRS|ARRAY|CODE
-Add header lines to the request or response MESSAGE.  Existing headers
+=method addHeaders $message, PAIRS|ARRAY|CODE
+Add header lines to the request or response $message.  Existing headers
 with the same name are retained.
 
    add_req_headers   => [ Server => 'MSIE' ]
@@ -255,9 +255,9 @@ sub addHeaders($@)
     sub { $_[1]->push_header(@pairs) };
 }
 
-=method proxify REQUEST, URI
-The URI is the result of a rewrite of the destination mentioned in the
-REQUEST.  To be able to forward the REQUEST to the next server, we need
+=method proxify $request, $uri
+The $uri is the result of a rewrite of the destination mentioned in the
+$request.  To be able to forward the $request to the next server, we need
 to rewrite its headers.
 
 It is also possible the the original request originates from browser
@@ -270,7 +270,7 @@ sub proxify($$)
     $request->header(Host => $uri->authority);
 }
 
-=method forwardRewrite SESSION, REQUEST, URI
+=method forwardRewrite $session, $request, $uri
 =cut
 
 sub forwardRewrite($$$)
@@ -280,7 +280,7 @@ sub forwardRewrite($$$)
     $mapper->(@_);
 }
 
-=method forwardRequest SESSION, REQUEST, URI
+=method forwardRequest $session, $request, $uri
 =cut
 
 sub forwardRequest($$$)
@@ -288,9 +288,7 @@ sub forwardRequest($$$)
     $self->_collect(undef, $session, $req, $uri);
 }
 
-1;
-
-__END__
+#----------------
 =chapter DETAILS
 
 =section Using the proxy-map
@@ -329,3 +327,6 @@ An open forwarding proxy can be made with
     , remote_proxy => 'proxy.firewall.me'
     );
 
+=cut 
+
+1;
