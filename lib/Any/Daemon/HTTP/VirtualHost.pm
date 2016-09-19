@@ -58,13 +58,16 @@ by using these options.
 
 =requires name    HOSTNAME
 
-=option   aliases HOSTNAME|ARRAY
+=option   aliases HOSTNAME|'AUTO'|ARRAY
 =default  aliases []
+[0.26] Alternative host components which indicate the same virtual host.  When
+'AUTO' is given, then M<generateAliases()> is used to produce a convenient
+list.
 
 =option   rewrite CODE|METHOD|HASH
 =default  rewrite <undef>
 When a request arrives, the URI can be rewritten to become an other
-request. See L</URI rewrite>.
+request. See L</URI Rewrite>.
 
 [0.21] When a METHOD name is specified, that will be called on
 the virtual host object.  An HASH as parameter is interpreted as a
@@ -122,7 +125,11 @@ sub init($)
         or error __x"virtual host {pkg} has no name", pkg => ref $self;
 
     my $aliases = $args->{aliases} || [];
-    $self->{ADHV_aliases}  = ref $aliases eq 'ARRAY' ? $aliases : [$aliases];
+    $self->{ADHV_aliases}
+      = ref $aliases eq 'ARRAY' ? $aliases
+      : $aliases eq 'AUTO'      ? [ $self->generateAliases($name) ]
+      :                           [ $aliases ];
+
     $self->{ADHV_handlers} = $args->{handler} || $args->{handlers} || {};
     $self->{ADHV_rewrite}  = $self->_rewrite_call($args->{rewrite});
     $self->{ADHV_redirect} = $self->_redirect_call($args->{redirect});
@@ -183,10 +190,23 @@ Returns a list of all aliases (alternative names) for this server.
 sub name()    {shift->{ADHV_name}}
 sub aliases() {@{shift->{ADHV_aliases}}}
 
+=ci_method generateAliases $hostname
+=cut
+
+sub generateAliases($)
+{   my ($thing, $h) = @_;
+    my @a;
+    $h    =~ m/^(([^.:]+)(?:[^:]*)?)(?:\:([0-9]+))?$/;
+    push @a, $1      if $3;              # name with port
+    push @a, $2      if $1 ne $2;        # hostname vs fqdn
+    push @a, "$2:$3" if $1 ne $2 && $3;  # hostname with port
+    @a;
+}
+
 #---------------------
 =section Handler
 
-=method addHandler CODE|$method|$map|HASH
+=method addHandler CODE|$method|PAIRS|HASH
 Handlers are called to dynamically generate responses, for instance
 to fill-in templates.  The L</DETAILS> section below explains how
 handlers work.
@@ -194,7 +214,7 @@ handlers work.
 When only CODE is given, then this will be the default handler for all
 paths (under '/', top). [0.21] CODE may also be a $method name.
 
-Usually, you pass a $map as PAIRS or as HASH, relating PATH names inside
+Usually, you pass some PAIRS or a HASH, relating PATH names inside
 the virtual host into function references or method names to be used for
 that tree.
 
@@ -262,12 +282,6 @@ sub findHandler(@)
     sub { HTTP::Response->new(HTTP_NOT_FOUND) };
 }
 
-#-----------------
-=section Access permissions
-=cut
-
-
-#-----------------
 =method handleRequest $server, $session, $request, [$uri]
 =cut
 
@@ -319,7 +333,7 @@ sub handleRequest($$$;$)
 
 =method rewrite $uri
 Returns an $uri object as result, which may be the original in case of
-no rewrite was needed.  See L</$uri Rewrite>.
+no rewrite was needed.  See L</URI Rewrite>.
 =cut
 
 sub rewrite($) { $_[0]->{ADHV_rewrite}->(@_) }

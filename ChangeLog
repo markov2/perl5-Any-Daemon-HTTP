@@ -1,7 +1,13 @@
 ===== version history for Any::Daemon::HTTP
 
-wishlist:
-	- reverse proxy
+version 0.26: Mon Sep 19 23:18:38 CEST 2016
+
+	Fixes:
+	- include examples in the manual-pages
+
+	Improvements:
+	- multi-proxy
+	- ::VirtualHost::new(aliases) value 'AUTO'
 
 version 0.25: Tue Apr 15 08:49:00 CEST 2014
 

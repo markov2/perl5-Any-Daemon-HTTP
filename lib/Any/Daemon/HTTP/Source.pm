@@ -2,7 +2,7 @@ use warnings;
 use strict;
 
 package Any::Daemon::HTTP::Source;
-use Log::Report  'any-daemon-http';
+use Log::Report    'any-daemon-http';
 
 use Net::CIDR      qw/cidrlookup/;
 use List::Util     qw/first/;
@@ -179,7 +179,7 @@ The parameters to C<allow> or C<deny> are an ARRAY with any combination of
 =back
 
 =example new(allow) parameters
- MyVHOST->new( allow =>
+ my $vhost = My::VHOST::Class->new( allow =>
     [ '192.168.2.1/32         # IPv4 CIDR, single address
     , '10/8'                  # IPv4 CIDR
     , '10.0.0.0-10.3.255.255' # IPv4 range
@@ -209,7 +209,8 @@ If you have an ::VirtualHost extension class, you do this:
 
 You may also pass a code-ref to M<new(allow)>:
 
- Any::Daemon::HTTP::VirtualHost->new(allow => \&my_rules);
+ my $vhost = Any::Daemon::HTTP::VirtualHost
+     ->new(allow => \&my_rules, ...);
 
  sub my_rules($$$$)   # called before each request
  {   my ($ip, $host, $session, $uri) = @_;

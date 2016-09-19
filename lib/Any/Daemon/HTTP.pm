@@ -194,10 +194,10 @@ sub init($)
       = $args->{proxy_class}   || 'Any::Daemon::HTTP::Proxy';
 
     $self->{ADH_vhosts}  = {};
-    $self->addVirtualHost($_) for _to_list $args->{vhosts}  || $args->{vhost};
+    $self->addVirtualHost($_) for _to_list($args->{vhosts}  || $args->{vhost});
 
     $self->{ADH_proxies} = [];
-    $self->addProxy($_)       for _to_list $args->{proxies} || $args->{proxy};
+    $self->addProxy($_)       for _to_list($args->{proxies} || $args->{proxy});
 
     !$args->{docroot}
         or error __x"docroot parameter has been removed in v0.11";
@@ -340,10 +340,11 @@ can cleanly extend the class for your own purpose.
 sub addVirtualHost(@)
 {   my $self   = shift;
     my $config = @_ > 1 ? +{@_} : !defined $_[0] ? return : shift;
+
     my $vhost;
-    if(UNIVERSAL::isa($config, 'Any::Daemon::HTTP::VirtualHost'))
+    if(blessed $config && $config->isa('Any::Daemon::HTTP::VirtualHost'))
          { $vhost = $config }
-    elsif(UNIVERSAL::isa($config, 'HASH'))
+    elsif(ref $config eq 'HASH')
          { $vhost = $self->{ADH_vhost_class}->new($config) }
     else { error __x"virtual host configuration not a valid object nor HASH" }
 
@@ -505,7 +506,8 @@ sub _connection($$)
 
     my $session = $self->{ADH_session_class}->new(client => $client);
     my $peer    = $session->get('peer');
-    my ($host, $ip) = @{$peer}{'host', 'ip'};
+    my $host    = $peer->{host};
+    my $ip      = $peer->{ip};
     info __x"new client from {host} on {ip}", host => $host, ip => $ip;
 
     # Change title in ps-table

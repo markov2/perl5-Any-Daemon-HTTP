@@ -8,15 +8,14 @@ use Log::Report    'any-daemon-http';
 
 use LWP::UserAgent ();
 use HTTP::Status   qw(HTTP_TOO_MANY_REQUESTS);
+use Time::HiRes    qw(time);
 
 =chapter NAME
 Any::Daemon::HTTP::Proxy - proxy request to a remote server
 
 =chapter SYNOPSIS
 
- my $proxy = Any::Daemon::HTTP::Proxy->new
-   ( path => '/forward'
-   );
+ my $proxy = Any::Daemon::HTTP::Proxy->new(path => '/forward');
 
  my $vh = Any::Daemon::HTTP::VirtualHost->new(proxies => $proxy);
 
@@ -28,17 +27,18 @@ There are two kinds of proxies:
 =over 4
 =item 1.
 Each M<Any::Daemon::HTTP::VirtualHost> may define as many proxies as it
-needs, selected by location inside a server namespace, just like other
-directories.
+needs: selected by location inside a virtual host namespace, just like other
+directories.  These requests are forwarded to some proxy server.
 
 =item 2.
 The HTTP daemon itself collects proxies which use C<forward_map>'s; mapping
-incoming requests for many domains to many destination.
+incoming requests for (one or) many domains to (one or) many destinations.
 =back
 
-The current implementation does not support all features of proxies.  For
-instance, reverse proxies are not yet implemented.  Besides, it does not
-combine incoming connections into new outgoing connections.
+The current implementation does not support all features of proxies.
+For instance, it does not combine incoming connections into new
+outgoing connections.  You may take a look at M<IOMux::HTTP::Gateway>
+for that.
 
 Proxy loop detection is used by adding C<Via> header fields (which
 can be removed explicitly).
@@ -63,8 +63,9 @@ and forwarded without uri rewrite.
 
 =option  remote_proxy PROXY|CODE
 =default remote_proxy C<undef>
-When this proxy speak to an other PROXY.  This can either be a fixed
-address or name, or computed for each request via a CODE reference.
+When this proxy speaks to an other PROXY.  This can either be a fixed
+address or name, or computed for each connection via a CODE reference.
+See M<remoteProxy()>.
 
 =option  reverse BOOLEAN
 =default reverse C<true>
@@ -104,6 +105,10 @@ uri as parameters.
 =option  via WORD
 =default via "$host:$port"
 To be included in the "Via" header line, which detects proxy loops.
+
+=option  forward_timeout SECONDS
+=default forward_timeout 100
+
 =cut
 
 sub init($)
@@ -122,13 +127,16 @@ sub init($)
     {   $self->{ADHDP_proxy} = ref $rem eq 'CODE' ? $rem : sub {$rem};
     }
 
+    $self->{ADHDP_fwd_to}    = $args->{forward_timeout} // 100;
+
+    # to be run before a request can be sent off
     my @prepare  =
       ( $self->stripHeaders($args->{strip_req_headers})
       , $self->addHeaders  ($args->{add_req_headers})
       , $args->{change_request} || ()
       );
-    
 
+    # to be run before a response is passed on the the client
     my @postproc =
       ( $self->stripHeaders($args->{strip_resp_headers})
       , $self->addHeaders  ($args->{add_resp_headers})
@@ -151,9 +159,9 @@ sub userAgent() {shift->{ADHDP_ua}}
 sub via()       {shift->{ADHDP_via}}
 sub forwardMap(){shift->{ADHDP_map}}
 
-=method remoteProxy $session, $request
-Returns the remote proxy to be used for $request.  If not set, then there
-is direct connection to the destination.
+=method remoteProxy $protocol, $session, $request, $uri
+Returns a list of remote proxies (at least one) to be used for $uri.
+If undef or empty, then there is direct connection to the destination.
 =cut
 
 sub remoteProxy(@)
@@ -165,16 +173,19 @@ sub remoteProxy(@)
 =section Action
 =cut
 
+my $last_used_proxy = '';
 sub _collect($$$$)
 {   my ($self, $vhost, $session, $req, $rel_uri) = @_;
+    my $resp;
 
-    my $tohost = $req->header('Host') || $vhost->name;
+    my $vhost_name = $vhost ? $vhost->name : '';
+    my $tohost = $req->header('Host') || $vhost_name;
 
     #XXX MO: need to support https as well
     my $uri    = URI->new_abs($rel_uri, "http://$tohost");
 
     # Via: RFC2616 section 14.45
-    my $my_via = '1.1 ' . ($self->via // $uri->host_port);
+    my $my_via = '1.1 ' . ($self->via // $vhost_name);
     if(my $via = $req->header('Via'))
     {   foreach (split /\,\s+/, $via)
         {   return HTTP::Response->new(HTTP_TOO_MANY_REQUESTS)
@@ -186,22 +197,60 @@ sub _collect($$$$)
     {   $req->push_header(Via => $my_via);
     }
 
-    $self->$_($req, $uri) for @{$self->{ADHDP_prepare}};
+    $self->$_($req, $uri)
+        for @{$self->{ADHDP_prepare}};
 
-    my $ua   = $self->userAgent;
-    $req->uri($uri);
-    if(my $proxy = $self->remoteProxy($session, $req))
+    my $ua      = $self->userAgent;
+    my @proxies = grep defined, $self->remoteProxy(HTTP => $session,$req,$uri);
+
+    if(@proxies)
     {   $self->proxify($req, $uri);
-        $ua->proxy($uri->scheme, $proxy);
+        if($proxies[0] ne $last_used_proxy)
+        {   # put last_used_proxy as first try.  UserAgent reuses connection
+            @proxies = ($last_used_proxy, grep $_ ne $last_used_proxy, @proxies)
+                if grep $_ eq $last_used_proxy, @proxies;
+        }
+
+        my $start   = time;
+        my $timeout = 3;
+        while(time - $start < $self->{ADHDP_fwd_to})
+        {   my $proxy = shift @proxies;
+
+            # redirect to next proxy
+            $ua->proxy($uri->scheme, $proxy)
+                if $proxy ne $last_used_proxy;
+
+            $last_used_proxy = $proxy;
+            $ua->timeout($timeout);
+
+            my $start_req = time;
+            $resp = $ua->request($req);
+
+            info __x"request {method} {uri} via {proxy}: {status} in {t%d}ms"
+              , method => $req->method, uri => "$uri", proxy => $proxy
+              , status => $resp->code, t => (time-$start_req)*1000;
+
+            last unless $resp->is_error;
+
+            $timeout++;  # each attempt waits one second longer
+
+            # rotate attempted proxies
+            push @proxies, $proxy;
+        }
     }
     else
     {   $ua->proxy($uri->scheme, undef);
+        $last_used_proxy = '';
+
+        $ua->timeout(180);
+        $resp = $ua->request($req);
+        info __x"request {method} {uri} without proxy: {status}"
+          , method => $req->method, uri => "$uri", status => $resp->code;
     }
 
-    info __x"request {method} {uri}", method => $req->method, uri => "$uri";
-    my $resp = $ua->request($req);
+    $self->$_($resp, $uri)
+        for @{$self->{ADHDP_postproc}};
 
-    $self->$_($resp, $uri) for @{$self->{ADHDP_postproc}};
     $resp;
 }
 
