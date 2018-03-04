@@ -1,7 +1,12 @@
+# This code is part of distribution Any-Daemon-HTTP. Meta-POD processed
+# with OODoc into POD and HTML manual-pages.  See README.md
+# Copyright Mark Overmeer.  Licensed under the same terms as Perl itself.
+
+package Any::Daemon::HTTP::VirtualHost;
+
 use warnings;
 use strict;
 
-package Any::Daemon::HTTP::VirtualHost;
 use Log::Report    'any-daemon-http';
 
 use Any::Daemon::HTTP::Directory;
@@ -40,13 +45,13 @@ Any::Daemon::HTTP::VirtualHost - webserver virtual hosts
  $daemon->addVirtualHost($myvhost);
 
 =chapter DESCRIPTION
-These virtual host definitions are used by M<Any::Daemon::HTTP>, to
-implement (server) name based data seperation.  Its features resemble those
-of Apache virtual hosts.
+These virtual host (vhost) configuration are used by M<Any::Daemon::HTTP>,
+to implement (server) name based data separation.  Its features resemble
+those of Apache virtual hosts.
 
-Each virtual host usually has to M<Any::Daemon::HTTP::Directory> slaves: one
-which describes the permissions for user directories (url paths in the
-form C< /~user/ >) and one for data outside the user space.
+Each vhost usually has two M<Any::Daemon::HTTP::Directory> slaves:
+one which describes the permissions for user directories (url paths in the
+form C< /~user/ >), the other for data outside the user space.
 
 =chapter METHODS
 
@@ -102,12 +107,16 @@ this parameter, there are no public user pages.
 Pass one or more M<Any::Daemon::HTTP::Proxy> OBJECTS, or HASHes which
 will be used to initialize them.
 
-=option   handlers CODE|HASH
+=option   handlers CODE|METHOD|HASH
 =default  handlers {}
 The keys are path names, part of the request URIs.  The values are
 CODE-references, called when that URI is addressed.  The access rules
 are taken from the directory definition which is selected by the path.
 Read L</DETAILS> for the details.
+
+=option  handler CODE|METHOD|HASH
+=default handler C<undef>
+Alias for C<handlers>.
 
 =cut
 
@@ -130,7 +139,8 @@ sub init($)
       : $aliases eq 'AUTO'      ? [ $self->generateAliases($name) ]
       :                           [ $aliases ];
 
-    $self->{ADHV_handlers} = $args->{handler} || $args->{handlers} || {};
+    $self->addHandler($args->{handlers} || $args->{handler});
+
     $self->{ADHV_rewrite}  = $self->_rewrite_call($args->{rewrite});
     $self->{ADHV_redirect} = $self->_redirect_call($args->{redirect});
     $self->{ADHV_udirs}    = $self->_user_dirs($args->{user_dirs});
@@ -206,7 +216,7 @@ sub generateAliases($)
 #---------------------
 =section Handler
 
-=method addHandler CODE|$method|PAIRS|HASH
+=method addHandler CODE|METHOD|PAIRS|HASH
 Handlers are called to dynamically generate responses, for instance
 to fill-in templates.  The L</DETAILS> section below explains how
 handlers work.
@@ -257,7 +267,7 @@ sub addHandler(@)
 }
 
 =method addHandlers $params
-Same as M<addHandler()>.
+Alias for M<addHandler()>.
 =cut
 
 *addHandlers = \&addHandler;
@@ -523,7 +533,8 @@ sub addProxy(@)
 =section Handlers
 
 Handlers are called to dynamically generate responses, for instance
-to fill-in templates.
+to fill-in templates.  In other frameworks, they are called 'routes'
+or 'get'.
 
 When a request for an URI is received, it is first checked whether
 a static file can fulfil the request.  If not, a search is started
@@ -646,9 +657,9 @@ object (the only parameter) or a new URI object.
      $uri;
   }
 
-=section Using Template::Toolkit
+=section Using Template Toolkit
  
-Connecting this server to the popular M<Template::Toolkit> webpage
+Connecting this server to the popular M<Template> Toolkit web-page
 framework is quite simple:
 
   # Use TT only for pages under /status
@@ -656,10 +667,12 @@ framework is quite simple:
 
   sub ttStatus($$$$)
   {   my ($self, $session, $request, $uri, $tree) = @_;;
+
+      # Often, this object is global or an attribute
       my $template = Template->new(...);
 
       my $output;
-      my $values = {};  # collect the values
+      my $values = {...};  # collect the values
       $template->process($fn, $values, \$output)
           or die $template->error, "\n";
 
@@ -669,8 +682,8 @@ framework is quite simple:
         );
   }
 
-See M<Log::Report::Extract::Template> if you need translations
-as well.
+See M<Log::Report::Template> if you need translations as well.
+
 =cut
 
 1;

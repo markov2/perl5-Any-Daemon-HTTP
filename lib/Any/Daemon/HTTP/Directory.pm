@@ -1,10 +1,14 @@
-use warnings;
-use strict;
+# This code is part of distribution Any-Daemon-HTTP. Meta-POD processed
+# with OODoc into POD and HTML manual-pages.  See README.md
+# Copyright Mark Overmeer.  Licensed under the same terms as Perl itself.
 
 package Any::Daemon::HTTP::Directory;
 use parent 'Any::Daemon::HTTP::Source';
 
-use Log::Report  'any-daemon-http';
+use warnings;
+use strict;
+
+use Log::Report    'any-daemon-http';
 
 use File::Spec     ();
 use File::Basename qw/dirname/;
