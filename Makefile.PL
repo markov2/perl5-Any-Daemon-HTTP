@@ -1,8 +1,8 @@
 use ExtUtils::MakeMaker;
 
-use 5.008;
+use 5.010;
 
-my $version = '0.27';
+my $version = '0.28';
 
 WriteMakefile
  ( NAME	 	=> 'Any::Daemon::HTTP'
