@@ -5,6 +5,9 @@ version 0.28:
 	Fixes:
 	- call ::VirtualHost::new() without handlers
 
+	Changes:
+	- ::VirtualHost::new(aliases) defaults to 'AUTO'
+
 version 0.27: Sun  4 Mar 12:26:01 CET 2018
 
 	Fixes:

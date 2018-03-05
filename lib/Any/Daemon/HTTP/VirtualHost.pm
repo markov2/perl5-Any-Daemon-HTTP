@@ -64,10 +64,10 @@ by using these options.
 =requires name    HOSTNAME
 
 =option   aliases HOSTNAME|'AUTO'|ARRAY
-=default  aliases []
+=default  aliases 'AUTO'
 [0.26] Alternative host components which indicate the same virtual host.  When
-'AUTO' is given, then M<generateAliases()> is used to produce a convenient
-list.
+'AUTO' is given (the default since [0.28]), then M<generateAliases()> is used
+to produce a convenient list.
 
 =option   rewrite CODE|METHOD|HASH
 =default  rewrite <undef>
@@ -133,11 +133,12 @@ sub init($)
     defined $name
         or error __x"virtual host {pkg} has no name", pkg => ref $self;
 
-    my $aliases = $args->{aliases} || [];
+    my $aliases = $args->{aliases} || 'AUTO';
     $self->{ADHV_aliases}
       = ref $aliases eq 'ARRAY' ? $aliases
       : $aliases eq 'AUTO'      ? [ $self->generateAliases($name) ]
-      :                           [ $aliases ];
+      : defined $aliases        ? [ $aliases ]
+	  : [];
 
     $self->addHandler($args->{handlers} || $args->{handler});
 
