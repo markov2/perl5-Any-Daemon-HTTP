@@ -8,6 +8,9 @@ version 0.28:
 	Changes:
 	- ::VirtualHost::new(aliases) defaults to 'AUTO'
 
+	Improvements:
+	- find virtual-host handler for '/'.
+
 version 0.27: Sun  4 Mar 12:26:01 CET 2018
 
 	Fixes:

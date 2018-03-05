@@ -291,7 +291,11 @@ sub findHandler(@)
         return $handler if $handler;
         pop @path;
     }
-    
+
+    if(my $handler = $h->{'/'})
+    {   return $handler;
+    }
+
     sub { HTTP::Response->new(HTTP_NOT_FOUND) };
 }
 
