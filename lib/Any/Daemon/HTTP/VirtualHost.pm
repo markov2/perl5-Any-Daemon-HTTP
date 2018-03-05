@@ -240,6 +240,8 @@ that tree.
 
 sub addHandler(@)
 {   my $self = shift;
+	return if @_==1 && !defined $_[0];
+
     my @pairs
        = @_ > 1              ? @_
        : ref $_[0] eq 'HASH' ? %{$_[0]}
