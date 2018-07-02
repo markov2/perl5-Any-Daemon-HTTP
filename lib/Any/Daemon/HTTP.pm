@@ -445,7 +445,7 @@ is active, you may pass C<handle_request> (see the vhost docs).
 
 =default child_task <accept http connections>
 
-=option  new_connection CODE|$method
+=option  new_connection CODE|METHOD
 =default new_connection 'newConnection'
 The CODE is called on each new connection made.  It gets as parameters
 the server (this object) and the connection (an

@@ -10,7 +10,8 @@ version 0.28:
 
 	Improvements:
 	- find virtual-host handler for '/'.
-	- run(new_connection) with method name
+	- run(new_connection) with method name.
+	- add ::VirtualHost->new aliases proxy and directory.
 
 version 0.27: Sun  4 Mar 12:26:01 CET 2018
 

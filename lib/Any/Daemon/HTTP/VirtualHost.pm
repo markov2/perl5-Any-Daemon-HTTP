@@ -96,6 +96,10 @@ option.
 Pass one or more M<Any::Daemon::HTTP::Directory> OBJECTS, or HASHes which will
 be used to initialize them.
 
+=option   directory OBJECT|HASH|ARRAY
+=default  directory C<undef>
+[0.28] Alias for C<directories>.
+
 =option   user_dirs undef|OBJECT|HASH
 =default  user_dirs C<undef>
 With an (empty?) HASH which contains instantiation parameter, an
@@ -107,6 +111,10 @@ this parameter, there are no public user pages.
 =default  proxies C<undef>
 Pass one or more M<Any::Daemon::HTTP::Proxy> OBJECTS, or HASHes which
 will be used to initialize them.
+
+=option   proxy OBJECT|HASH|ARRAY
+=default  proxy C<undef>
+[0.28] Alias for C<proxies>.
 
 =option   handlers CODE|METHOD|HASH
 =default  handlers {}
@@ -149,11 +157,11 @@ sub init($)
 
     $self->{ADHV_sources}     = {};
     $self->_auto_docs($args->{documents});
-    my $dirs = $args->{directories} || [];
+    my $dirs = $args->{directories} || $args->{directory} || [];
     $self->addDirectory($_) for ref $dirs eq 'ARRAY' ? @$dirs : $dirs;
 
     $self->{ADHV_proxies}  = {};
-    my $proxies = $args->{proxies}  || [];
+    my $proxies = $args->{proxies}  || $args->{proxy} || [];
     $self->addProxy($_) for ref $proxies eq 'ARRAY' ? @$proxies : $proxies;
 
     $self;
@@ -549,7 +557,7 @@ a static file can fulfil the request.  If not, a search is started
 for the handler with the longest path.
 
   # /upload($|/*) goes to the upload_handler
-  $vhost->addHandler
+  $vhost->addHandlers
     ( '/'       => \&default_handler
     , '/upload' => \&upload_handler
     );
@@ -592,7 +600,7 @@ The handler could work like this:
 
       HTTP::Response->new(HTTP_OK, ...);
   }
-  
+
 =section Your virtual host as class
 
 When your virtual host has larger configuration or many handlers --or when
