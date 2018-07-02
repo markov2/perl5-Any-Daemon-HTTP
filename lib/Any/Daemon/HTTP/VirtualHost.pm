@@ -30,6 +30,7 @@ Any::Daemon::HTTP::VirtualHost - webserver virtual hosts
   , rewrite     => ...
   , handlers    => ...
   );
+
  my $daemon = Any::Daemon::HTTP->new
    ( @other_options
    , vhosts  => $vhost  # or \@vhosts

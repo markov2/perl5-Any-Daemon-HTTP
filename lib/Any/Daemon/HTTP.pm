@@ -445,8 +445,8 @@ is active, you may pass C<handle_request> (see the vhost docs).
 
 =default child_task <accept http connections>
 
-=option  new_connection CODE
-=default new_connection <undef>
+=option  new_connection CODE|$method
+=default new_connection 'newConnection'
 The CODE is called on each new connection made.  It gets as parameters
 the server (this object) and the connection (an
 M<Any::Daemon::HTTP::Session> extension)
@@ -520,7 +520,9 @@ sub _connection($$)
     $title   .= ' http from '. ($host||$ip);
     $0        = $title;
 
-    $args->{new_connection}->($self, $session);
+	my $init_conn = $args->{new_connection};
+	if(ref $init_conn eq 'CODE') { $init_conn->($self, $session) }
+	else { $self->$init_conn($session) }
 
     $SIG{ALRM} = sub {
         notice __x"connection from {host} lasted too long, killed after {time%d} seconds"
@@ -581,7 +583,7 @@ sub _connection($$)
 sub run(%)
 {   my ($self, %args) = @_;
 
-    $args{new_connection} ||= sub {};
+    $args{new_connection} ||= 'newConnection';
 
     my $vhosts = $self->{ADH_vhosts};
     unless(keys %$vhosts)
@@ -636,6 +638,16 @@ sub run(%)
     };
 
     $self->SUPER::run(%args);
+}
+
+=method newConnection $session
+Called by default when a new client has been accepted.
+See M<run(new_connection)>.
+=cut
+
+sub newConnection($)
+{   my ($self, $session) = @_;
+    return $self;
 }
 
 # HTTP::Daemon methods used by ::ClientConn.  We steal that parent role,
