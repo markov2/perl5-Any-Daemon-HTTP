@@ -12,6 +12,7 @@ version 0.28:
 	- find virtual-host handler for '/'.
 	- run(new_connection) with method name.
 	- add ::VirtualHost->new aliases proxy and directory.
+	- for vhost, fallback to lookup name/aliases without portnumber
 
 version 0.27: Sun  4 Mar 12:26:01 CET 2018
 

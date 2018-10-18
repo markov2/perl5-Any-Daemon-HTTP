@@ -449,7 +449,9 @@ is active, you may pass C<handle_request> (see the vhost docs).
 =default new_connection 'newConnection'
 The CODE is called on each new connection made.  It gets as parameters
 the server (this object) and the connection (an
-M<Any::Daemon::HTTP::Session> extension)
+M<Any::Daemon::HTTP::Session> extension).
+
+[0.28] Also a METHOD name.  See M<newConnection()>
 
 =option  max_conn_per_child INTEGER
 =default max_conn_per_child 10_000
@@ -495,6 +497,7 @@ of the server may fail with "socket already in use".
 
 sub _connection($$)
 {   my ($self, $client, $args) = @_;
+
     my $nr_req   = 0;
     my $max_req  = $args->{max_req_per_conn} || 100;
     my $start    = time;
@@ -520,9 +523,9 @@ sub _connection($$)
     $title   .= ' http from '. ($host||$ip);
     $0        = $title;
 
-	my $init_conn = $args->{new_connection};
-	if(ref $init_conn eq 'CODE') { $init_conn->($self, $session) }
-	else { $self->$init_conn($session) }
+    my $init_conn = $args->{new_connection};
+    if(ref $init_conn eq 'CODE') { $init_conn->($self, $session) }
+    else { $self->$init_conn($session) }
 
     $SIG{ALRM} = sub {
         notice __x"connection from {host} lasted too long, killed after {time%d} seconds"
@@ -533,9 +536,14 @@ sub _connection($$)
     alarm $deadline - time;
     while(my $req  = $client->get_request)
     {   my $vhostn = $req->header('Host') || 'default';
-        my $resp;
+		my $vhost  = $self->virtualHost($vhostn);
 
-        if(my $vhost  = $self->virtualHost($vhostn))
+        # Fallback to vhost without specific port number
+        $vhost ||= $self->virtualHost($1)
+            if $vhostn =~ /(.*)\:[0-9]+$/;
+
+        my $resp;
+        if($vhost)
         {   $self->{ADH_host_base}
               = (ref($client) =~ /SSL/ ? 'https' : 'http').'://'.$vhost->name;
             $resp = $vhost->handleRequest($self, $session, $req);
@@ -637,11 +645,12 @@ sub run(%)
         0;
     };
 
+    info __x"start running the webserver";
     $self->SUPER::run(%args);
 }
 
 =method newConnection $session
-Called by default when a new client has been accepted.
+[0.28] Called by default when a new client has been accepted.
 See M<run(new_connection)>.
 =cut
 
