@@ -11,6 +11,7 @@ version 0.28:
 	Improvements:
 	- find virtual-host handler for '/'.
 	- run(new_connection) with method name.
+	- new option run(new_child)
 	- add ::VirtualHost->new aliases proxy and directory.
 	- for vhost, fallback to lookup name/aliases without portnumber
 

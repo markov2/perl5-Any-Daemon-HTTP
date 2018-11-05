@@ -46,6 +46,7 @@ Any::Daemon::HTTP - preforking Apache/Plack-like webserver
   my $http = Any::Daemon::HTTP->new
     ( handler   => \&handler
     , listen    => 'server.example.com:80'
+    , new_child => sub { dispatcher SYSLOG, 'default' }
     , %daemon_opts
     );
 
@@ -445,6 +446,11 @@ is active, you may pass C<handle_request> (see the vhost docs).
 
 =default child_task <accept http connections>
 
+=option  new_child CODE|METHOD
+=defailt new_child 'newChild'
+[0.28] run code when a new child process is started.  This will run
+before the task starts waiting for connections.  See M<newChild()>
+
 =option  new_connection CODE|METHOD
 =default new_connection 'newConnection'
 The CODE is called on each new connection made.  It gets as parameters
@@ -517,19 +523,16 @@ sub _connection($$)
     my $ip      = $peer->{ip};
     info __x"new client from {host} on {ip}", host => $host, ip => $ip;
 
-    # Change title in ps-table
-    my $title = $0;
-    $title    =~ s/ .*//;
-    $title   .= ' http from '. ($host||$ip);
-    $0        = $title;
-
     my $init_conn = $args->{new_connection};
-    if(ref $init_conn eq 'CODE') { $init_conn->($self, $session) }
-    else { $self->$init_conn($session) }
+    $self->$init_conn($session);
+
+    # Change title in ps-table
+    my $title = $0 =~ /^(\S+)/ ? basename($1) : $0;
+    $0        = $title . ' http from '. ($host||$ip);
 
     $SIG{ALRM} = sub {
         notice __x"connection from {host} lasted too long, killed after {time%d} seconds"
-          , host => $host, time => $deadline - $start;
+          , host => ($host || $ip), time => $deadline - $start;
         exit 0;
     };
 
@@ -591,6 +594,7 @@ sub _connection($$)
 sub run(%)
 {   my ($self, %args) = @_;
 
+    my $new_child = $args{new_child} || 'newChild';
     $args{new_connection} ||= 'newConnection';
 
     my $vhosts = $self->{ADH_vhosts};
@@ -605,8 +609,8 @@ sub run(%)
         $first->addHandler('/' => $handler);
     }
 
-    my $title      = $0;
-    $title         =~ s/ .*//;
+    my $title      = $0 =~ /^(\S+)/ ? basename($1) : $0;
+
     my ($req_count, $conn_count) = (0, 0);
     my $max_conn   = $args{max_conn_per_child} || 10_000;
     $max_conn      = int(0.9 * $max_conn + rand(0.2 * $max_conn))
@@ -615,11 +619,13 @@ sub run(%)
     my $max_req    = $args{max_req_per_child}  || 100_000;
     my $linger     = $args{linger};
 
-    $0 = "$title, manager";  # $0 visible with 'ps' command
+    $0 = "$title manager";  # $0 visible with 'ps' command
     $args{child_task} ||= sub {
-        $0 = "$title, not used yet";
+        $0 = "$title not used yet";
         # even with one port, we still select...
         my $select = IO::Select->new($self->sockets);
+
+        $self->$new_child($select);
 
       CONNECTION:
         while(my @ready = $select->can_read)
@@ -629,7 +635,7 @@ sub run(%)
                 $client->sockopt(SO_LINGER, (pack "II", 1, $linger))
                     if defined $linger;
 
-                $0 = "$title, handling "
+                $0 = "$title handling "
                    . $client->peerhost.":".$client->peerport . " at "
                    . $client->sockhost.':'.$client->sockport;
 
@@ -640,7 +646,7 @@ sub run(%)
                     if $conn_count++ >= $max_conn
                     || $req_count    >= $max_req;
             }
-            $0 = "$title, idle after $conn_count";
+            $0 = "$title idle after $conn_count";
         }
         0;
     };
@@ -656,6 +662,21 @@ See M<run(new_connection)>.
 
 sub newConnection($)
 {   my ($self, $session) = @_;
+    return $self;
+}
+
+=method newChild $select
+[0.28] Called by default when a new task process has been generated.  It
+gets the M<IO::Select> object as only parameter (for now), which is the
+only thing created before this call.  After this call, the process starts
+waiting for connections.
+
+This parameter/method is typically used to (re)connect to the database,
+or setup logging.
+=cut
+
+sub newChild($)
+{   my ($self, $select) = @_;
     return $self;
 }
 
