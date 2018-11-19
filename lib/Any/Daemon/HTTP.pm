@@ -521,7 +521,8 @@ sub _connection($$)
     my $peer    = $session->get('peer');
     my $host    = $peer->{host};
     my $ip      = $peer->{ip};
-    info __x"new client from {host} on {ip}", host => $host, ip => $ip;
+    info __x"new client from {host} on {ip}", host => $host // '(unnamed)',
+		ip => $ip;
 
     my $init_conn = $args->{new_connection};
     $self->$init_conn($session);
