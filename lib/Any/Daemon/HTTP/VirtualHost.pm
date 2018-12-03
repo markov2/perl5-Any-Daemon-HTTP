@@ -341,6 +341,10 @@ sub handleRequest($$$;$)
     $resp = $self->findHandler(@path)->($self, $session, $req, $uri, $source);
     $resp or return HTTP::Response->new(HTTP_NO_CONTENT);
 
+    blessed $resp && $resp->isa('HTTP::Response')
+        or error __x"Handler for {uri} does not return an HTTP::Response",
+            uri => $uri->as_string;
+
     $resp->code eq HTTP_OK
         or return $resp;
 
