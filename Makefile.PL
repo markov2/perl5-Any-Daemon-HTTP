@@ -35,6 +35,7 @@ WriteMakefile
 
  , AUTHOR       => 'Mark Overmeer'
  , ABSTRACT     => 'Generic http server'
+ , LICENSE      => 'perl_5'
 
  , META_MERGE =>
       { 'meta-spec' => { version => 2 }
