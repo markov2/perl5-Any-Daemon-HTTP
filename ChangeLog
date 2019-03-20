@@ -4,6 +4,7 @@ version 0.28:
 
 	Fixes:
 	- call ::VirtualHost::new() without handlers
+	- missing dependency on LWP::UserAgent
 
 	Changes:
 	- ::VirtualHost::new(aliases) defaults to 'AUTO'
