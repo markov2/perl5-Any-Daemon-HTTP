@@ -447,7 +447,7 @@ is active, you may pass C<handle_request> (see the vhost docs).
 =default child_task <accept http connections>
 
 =option  new_child CODE|METHOD
-=defailt new_child 'newChild'
+=default new_child 'newChild'
 [0.28] run code when a new child process is started.  This will run
 before the task starts waiting for connections.  See M<newChild()>
 

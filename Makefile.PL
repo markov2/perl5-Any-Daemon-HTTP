@@ -9,7 +9,7 @@ WriteMakefile
  , VERSION	=> $version
 
  , PREREQ_PM    =>
-   { Any::Daemon      => 0.93
+   { Any::Daemon      => 0.96
    , URI              => 0
    , Encode           => 0
    , English          => 0
