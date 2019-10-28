@@ -24,7 +24,7 @@ use File::Spec       ();
 use Scalar::Util     qw/blessed/;
 use Errno            qw/EADDRINUSE/;
 
-use constant
+use constant   # default ports
   { PROTO_HTTP  => 80
   , PROTO_HTTPS => 443
   };
@@ -169,9 +169,14 @@ hosts.
 =default proxy_class M<Any::Daemon::HTTP::Proxy>
 [0.24] The PACKAGE must extend the default class.
 
+=option  protocol 'HTTP'|'HTTPS'
+=default protocol HTTP and HTTPS by port-number
+[0.29] Specify which kind of connection has to be managed: plain HTTP or
+HTTP over SSL.
 =cut
 
 sub _to_list($) { ref $_[0] eq 'ARRAY' ? @{$_[0]} : defined $_[0] ? $_[0] : () }
+
 sub init($)
 {   my ($self, $args) = @_;
     $self->SUPER::init($args);
@@ -179,7 +184,10 @@ sub init($)
     my $listen = $args->{listen} || $args->{socket} || $args->{host};
     my (@sockets, @hosts);
     foreach my $conn (_to_list $listen)
-    {   my ($socket, @host) = $self->_create_socket($conn);
+    {   my ($socket, @host) = $self->_create_socket($conn
+          , protocol => $$args->{protocol}
+          );
+
         push @sockets, $socket if $socket;
         push @hosts, @host;
     }
@@ -224,24 +232,29 @@ sub init($)
     $self;
 }
 
-sub _create_socket($)
-{   my ($self, $listen) = @_;
+sub _create_socket($%)
+{   my ($self, $listen, %args) = @_;
     defined $listen or return;
 
     return ($listen, $listen->sockhost.':'.$listen->sockport)
         if blessed $listen && $listen->isa('IO::Socket');
 
-    my $port = $listen =~ s/\:([0-9]+)$// ? $1 : PROTO_HTTP;
-    my $host = $listen;
-    
+    my $port  = $listen =~ s/\:([0-9]+)$// ? $1 : PROTO_HTTP;
+    my $host  = $listen;
+    my $proto = $self->{ADH_protocol}
+      = $args{protocol} || ($port==PROTO_HTTPS ? 'HTTPS' : 'HTTP');
+
     my $sock_class;
-    if($port==PROTO_HTTPS)
+    if($proto eq 'HTTPS')
     {   $sock_class = 'IO::Socket::SSL';
-        eval "require IO::Socket::SSL; require HTTP::Daemon::ClientConn::SSL;"
+        eval "require IO::Socket::SSL; require HTTP::Daemon::SSL;"
             or panic $@;
     }
-    else
+    elsif($proto eq 'HTTP')
     {   $sock_class = 'IO::Socket::IP';
+    }
+    else
+    {   error __x"Unsupported protocol '{proto}'", proto => $proto;
     }
 
     # Wait max 60 seconds to get the socket
