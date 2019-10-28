@@ -176,13 +176,12 @@ sub init($)
 {   my ($self, $args) = @_;
     $self->SUPER::init($args);
 
+    my $listen = $args->{listen} || $args->{socket} || $args->{host};
     my (@sockets, @hosts);
-    foreach (@{$args}{qw/listen socket host/} )
-    {   foreach my $conn (ref $_ eq 'ARRAY' ? @$_ : $_)
-        {   my ($socket, @host) = $self->_create_socket($conn);
-            push @sockets, $socket if $socket;
-            push @hosts, @host;
-        }
+    foreach my $conn (_to_list $listen)
+    {   my ($socket, @host) = $self->_create_socket($conn);
+        push @sockets, $socket if $socket;
+        push @hosts, @host;
     }
 
     @sockets or error __x"host or socket required for {pkg}::new()"
