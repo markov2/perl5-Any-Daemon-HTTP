@@ -173,6 +173,11 @@ hosts.
 =default protocol HTTP and HTTPS by port-number
 [0.29] Specify which kind of connection has to be managed: plain HTTP or
 HTTP over SSL.
+
+=option  show_in_ps BOOLEAN
+=default show_in_ps C<true>
+Show the status of the childs in "ps".  On some systems, this looks nice,
+but on others there are various mutilations.
 =cut
 
 sub _to_list($) { ref $_[0] eq 'ARRAY' ? @{$_[0]} : defined $_[0] ? $_[0] : () }
@@ -217,6 +222,7 @@ sub init($)
     $self->{ADH_server}  = $args->{server_id} || basename($0);
     $self->{ADH_headers} = $args->{standard_headers} || [];
     $self->{ADH_error}   = $args->{on_error}  || sub { $_[1] };
+    $self->{ADH_show_ps} = exists $args->{show_in_ps} ? $args->{show_in_ps} : 1;
 
     # "handlers" is probably a common typo
     my $handler = $args->{handlers} || $args->{handler};
@@ -632,9 +638,9 @@ sub run(%)
     my $max_req    = $args{max_req_per_child}  || 100_000;
     my $linger     = $args{linger};
 
-    $0 = "$title manager";  # $0 visible with 'ps' command
+    $self->psTitle("$title manager\x00\x00");
     $args{child_task} ||= sub {
-        $0 = "$title not used yet";
+        $self->psTitle("$title not used yet");
         # even with one port, we still select...
         my $select = IO::Select->new($self->sockets);
 
@@ -648,9 +654,9 @@ sub run(%)
                 $client->sockopt(SO_LINGER, (pack "II", 1, $linger))
                     if defined $linger;
 
-                $0 = "$title handling "
+                $self->psTitle("$title handling "
                    . $client->peerhost.":".$client->peerport . " at "
-                   . $client->sockhost.':'.$client->sockport;
+                   . $client->sockhost.':'.$client->sockport);
 
                 $req_count += $self->_connection($client, \%args);
                 $client->close;
@@ -659,7 +665,7 @@ sub run(%)
                     if $conn_count++ >= $max_conn
                     || $req_count    >= $max_req;
             }
-            $0 = "$title idle after $conn_count";
+            $self->psTitle("$title idle after $conn_count");
         }
         0;
     };
@@ -691,6 +697,14 @@ or setup logging.
 sub newChild($)
 {   my ($self, $select) = @_;
     return $self;
+}
+
+=method psTitle $string
+=cut
+
+sub psTitle($)
+{   my ($self, $string) = @_;
+    $0 = $string if $self->{ADH_show_ps};
 }
 
 # HTTP::Daemon methods used by ::ClientConn.  We steal that parent role,
