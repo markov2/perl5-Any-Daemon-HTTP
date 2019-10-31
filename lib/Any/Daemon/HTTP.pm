@@ -25,8 +25,8 @@ use Scalar::Util     qw/blessed/;
 use Errno            qw/EADDRINUSE/;
 
 use constant   # default ports
-  { PROTO_HTTP  => 80
-  , PROTO_HTTPS => 443
+  { PORT_HTTP  => 80
+  , PORT_HTTPS => 443
   };
 
 # To support IPv6, replace ::INET by ::IP
@@ -245,10 +245,10 @@ sub _create_socket($%)
     return ($listen, $listen->sockhost.':'.$listen->sockport)
         if blessed $listen && $listen->isa('IO::Socket');
 
-    my $port  = $listen =~ s/\:([0-9]+)$// ? $1 : PROTO_HTTP;
+    my $port  = $listen =~ s/\:([0-9]+)$// ? $1 : PORT_HTTP;
     my $host  = $listen;
     my $proto = $self->{ADH_protocol}
-      = $args{protocol} || ($port==PROTO_HTTPS ? 'HTTPS' : 'HTTP');
+      = $args{protocol} || ($port==PORT_HTTPS ? 'HTTPS' : 'HTTP');
 
     my $sock_class;
     if($proto eq 'HTTPS')
