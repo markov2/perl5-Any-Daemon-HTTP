@@ -36,7 +36,7 @@ to cache information as well.
 sub new(%)  {my $class = shift; (bless {}, $class)->init({@_})}
 sub init($)
 {   my ($self, $args) = @_;
-    my $client = $self->{ADHC_store} = $args->{client} or panic;
+    my $client = $args->{client} or panic;
     my $store  = $self->{ADHC_store} = $args->{store} || {};
 
     my $peer   = $store->{peer}    ||= {};

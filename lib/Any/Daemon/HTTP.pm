@@ -169,10 +169,10 @@ hosts.
 =default proxy_class M<Any::Daemon::HTTP::Proxy>
 [0.24] The PACKAGE must extend the default class.
 
-=option  protocol 'HTTP'|'HTTPS'
+=option  protocol 'HTTP'|'HTTPS'|'FCGI'
 =default protocol HTTP and HTTPS by port-number
-[0.29] Specify which kind of connection has to be managed: plain HTTP or
-HTTP over SSL.
+[0.29] Specify which kind of connection has to be managed: plain HTTP,
+HTTP over SSL, or HTTP over FCGI.
 
 =option  show_in_ps BOOLEAN
 =default show_in_ps C<true>
@@ -190,7 +190,7 @@ sub init($)
     my (@sockets, @hosts);
     foreach my $conn (_to_list $listen)
     {   my ($socket, @host) = $self->_create_socket($conn
-          , protocol => $$args->{protocol}
+          , protocol => $args->{protocol}
           );
 
         push @sockets, $socket if $socket;
@@ -253,11 +253,14 @@ sub _create_socket($%)
     my $sock_class;
     if($proto eq 'HTTPS')
     {   $sock_class = 'IO::Socket::SSL';
-        eval "require IO::Socket::SSL; require HTTP::Daemon::SSL;"
-            or panic $@;
+        eval "require IO::Socket::SSL; require HTTP::Daemon::SSL" or panic $@;
     }
     elsif($proto eq 'HTTP')
     {   $sock_class = 'IO::Socket::IP';
+    }
+    elsif($proto eq 'FCGI')
+    {   $sock_class = 'IO::Socket::IP';
+        eval "require Any::Daemon::FCGI" or panic $@;
     }
     else
     {   error __x"Unsupported protocol '{proto}'", proto => $proto;
@@ -300,13 +303,22 @@ sub _create_socket($%)
 
 #----------------
 =section Accessors
+
 =method sockets
 Returns all the sockets we listen on.  This list is the result of
 M<new(listen)>.
+
+=method hosts
+Returns a list of hostnames used to connect to the sockets.
+
+=method protocol
+Returns C<HTTP>, C<HTTPS>, or C<FCGI> to express the procotol used. All
+implementations are based on L<HTTP::Daemon> (part of LWP)
 =cut
 
-sub sockets() {@{shift->{ADH_sockets}}}
-sub hosts()   {@{shift->{ADH_hosts}}}
+sub sockets()  { @{shift->{ADH_sockets}} }
+sub hosts()    { @{shift->{ADH_hosts}} }
+sub protocol() { shift->{ADH_protocol} }
 
 #-------------
 =section Host administration
@@ -523,17 +535,24 @@ sub _connection($$)
 {   my ($self, $client, $args) = @_;
 
     my $nr_req   = 0;
-    my $max_req  = $args->{max_req_per_conn} || 100;
+    my $max_req  = $args->{max_req_per_conn} ||= 100;
     my $start    = time;
-    my $deadline = $start + ($args->{max_time_per_conn} || 120);
-    my $bonus    = $args->{req_time_bonus} // 2;
+    my $deadline = $start + ($args->{max_time_per_conn} ||= 120);
+    my $bonus    = $args->{req_time_bonus} //= 2;
 
-    my $conn_class = $client->isa('IO::Socket::SSL')
-      ? 'HTTP::Daemon::ClientConn::SSL' : 'HTTP::Daemon::ClientConn';
+    my $conn;
+    if($self->protocol eq 'FCGI')
+    {   $args->{socket} = $client;
+        $conn = Any::Daemon::FCGI::ClientConn->new($args);
+    }
+    else
+    {   # Ugly hack, steal HTTP::Daemon's HTTP/1.1 implementation
+        $conn = bless $client, $client->isa('IO::Socket::SSL')
+          ? 'HTTP::Daemon::ClientConn::SSL'
+          : 'HTTP::Daemon::ClientConn';
 
-    # Ugly hack, steal HTTP::Daemon's http/1.1 implementation
-    bless $client, $conn_class;
-    ${*$client}{httpd_daemon} = $self;
+        ${*$conn}{httpd_daemon} = $self;
+    }
 
     my $session = $self->{ADH_session_class}->new(client => $client);
     my $peer    = $session->get('peer');
@@ -556,7 +575,7 @@ sub _connection($$)
     };
 
     alarm $deadline - time;
-    while(my $req  = $client->get_request)
+    while(my $req  = $conn->get_request)
     {   my $vhostn = $req->header('Host') || 'default';
 		my $vhost  = $self->virtualHost($vhostn);
 
@@ -567,7 +586,7 @@ sub _connection($$)
         my $resp;
         if($vhost)
         {   $self->{ADH_host_base}
-              = (ref($client) =~ /SSL/ ? 'https' : 'http').'://'.$vhost->name;
+              = (ref($conn) =~ /SSL/ ? 'https' : 'http').'://'.$vhost->name;
             $resp = $vhost->handleRequest($self, $session, $req);
         }
         elsif(my ($proxy, $where) = $self->findProxy($session, $req, $vhostn))
@@ -601,7 +620,7 @@ sub _connection($$)
         my $close = $nr_req++ >= $max_req;
 
         $resp->header(Connection => ($close ? 'close' : 'open'));
-        $client->send_response($resp);
+        $conn->send_response($resp);
 
         last if $close;
     }
