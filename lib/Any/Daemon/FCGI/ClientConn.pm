@@ -64,11 +64,20 @@ Any::Daemon::FCGI::ClientConn - handle FCGI requests
 =chapter SYNOPSIS
 
 =chapter DESCRIPTION
-Handles request from one single client.
+Handles request from one single client in FCGI protocol.  This object
+gets initialized on any incoming connection by M<Any::Daemon::HTTP> when
+C<protocol=FCGI>.
 
 =chapter METHODS
 
 =c_method new %options
+
+=required socket M<IO::Socket::IP>
+Our client socket, for incoming traffic.
+
+=required max_childs INTEGER
+The number of processes which are started in this back-end server.  We do
+not want more than this number of requests from the front-end server.
 =cut
 
 sub new($%) { (bless {}, $_[0])->init($_[1]) }
@@ -76,7 +85,7 @@ sub new($%) { (bless {}, $_[0])->init($_[1]) }
 sub init($)
 {   my ($self, $args) = @_;
     $self->{ADFC_socket}    = my $socket = $args->{socket} or panic;
-    $self->{ADFC_max_conns} = $args->{max_childs};
+    $self->{ADFC_max_conns} = $args->{max_childs} or panic;
     $self->{ADFC_max_reqs}  = $args->{max_childs};
     $self->{_stdin}         = \my $stdin;
     $self->{ADFC_select}    = my $select = IO::Select->new;
@@ -234,6 +243,8 @@ sub send_response($;$)
 
     my $req_id = $response->request->request_id;
 
+    # Simply "Status: " in front of the Response header will make the whole
+    # message HTTP::Response into a valid CGI response.
     $self->_reply_record(STDOUT => $req_id
       , 'Status: '.$response->as_string(CRLF));
     $self->_reply_record(STDOUT => $req_id, '');
@@ -243,10 +254,7 @@ sub send_response($;$)
         $self->_reply_record(STDERR => $req_id, '');
     }
 
-    # Must return 0 on 'no error'
-    my $rc = $response->code==200 ? 0 : $response->code;
-
-    $self->_fcgi_end_request(REQUEST_COMPLETE => $req_id, $rc);
+    $self->_fcgi_end_request(REQUEST_COMPLETE => $req_id);
 }
 
 #### MANAGEMENT RECORDS
@@ -257,6 +265,9 @@ sub _management_record($$)
       $type eq 'GET_VALUES' ? $self->_fcgi_get_values($body)
     :                         $self->_fcgi_unknown($body);
 }
+
+# Request record FCGI_GET_VALUES may be used by the front-end server to
+# collect back_end settings.  In Apache, you have to configure it manually.
 
 sub _fcgi_get_values($)
 {   my $self = shift;
@@ -279,14 +290,20 @@ sub _fcgi_get_values($)
     $self->_reply_record(GET_VALUES_RESULT => 0, $self->hash2body(\%need));
 }
 
+# Reply record FCGI_UNKNOWN_TYPE is designed for protocol upgrades: to 
+# respond to unknown record types.
+
 sub _fcgi_unknown($)
 {   my ($self, $body) = @_;
     $self->_reply_record(UNKNOWN_TYPE => 0, '');
 }
 
-sub _fcgi_end_request($$$)
+# Reply END_REQUEST is used for all ways to close a BEGIN_REQUEST session.
+# It depends on the $status code which additionals fields were sent.
+
+sub _fcgi_end_request($$;$)
 {   my ($self, $status, $req_id, $rc) = @_;
-    my $body = pack "nCCCC", $rc, $end_status2id{$status}
+    my $body = pack "nCCCC", $rc || 0, $end_status2id{$status}
       , RESERVED, RESERVED, RESERVED;
 
     $self->_reply_record(END_REQUEST => $req_id, $body);
