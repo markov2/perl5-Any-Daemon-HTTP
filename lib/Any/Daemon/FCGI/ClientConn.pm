@@ -101,12 +101,9 @@ sub _next_record()
     length $leader==8 or return;
 
     my ($version, $type_id, $req_id, $clen, $plen) = unpack 'CCnnC', $leader;
-open my $log, '>>', "/tmp/fcgi.$$.log";
-print $log "GOT TYPE=$type_id REQ=$req_id READING=$clen+$plen\n";
     my $body = $self->_read_chunk($clen + $plen);
 
     substr $body, -$plen, $plen, '' if $plen;   # remove padding bytes
-print $log "GOT ISA $frame_id2name{$type_id}\n";
     length $body==$clen or return;
 
     ($frame_id2name{$type_id} || 'UNKNOWN_TYPE', $req_id, \$body);
@@ -117,19 +114,15 @@ sub _reply_record($$$)
     my $type_id = $frame_name2id{$type} or panic $type;
     my $empty   = ! length $body;  # write one empty frame
 
-open my $log, '>>', "/tmp/fcgi.$$.log";
     while(length $body || $empty)
     {   my $chunk  = substr $body, 0, MAX_FRAME_SEND, '';
         my $size   = length $chunk;
-print $log caller(), "\n";
-print $log "WRITE $type SIZE=$size; CHUNK=$chunk; TODO_SIZE=".length $body;
         my $pad    = (-$size) % 8;    # advise to pad on 8 bytes
         my $frame  = pack "CCnnCxa${size}x${pad}"
           , FCGI_VERSION, $type_id, $req_id, $size, $pad, $chunk;
 
         while(length $frame)
         {   my $wrote = syswrite $self->socket, $frame;
-print $log "WRITE>>$frame<<\n";
             if(defined $wrote)
             {   substr $frame, 0, $wrote, '';
                 next;
@@ -141,7 +134,6 @@ print $log "WRITE>>$frame<<\n";
 
         last if $empty;
     }
-close $log;
 }
 
 =method my $request = $client->get_request;
@@ -163,15 +155,9 @@ sub get_request()
 
     until($params_complete && $stdin_complete && $data_complete)
     {
-open my $log1, '>>', "/tmp/fcgi.$$.log";
-print $log1 "$params_complete && $stdin_complete && $data_complete\n";
-close $log1;
         my ($type, $id, $body) = $self->_next_record
             or return;
 
-open my $log, '>>', "/tmp/fcgi.$$.log";
-print $log "RECORD $type REQ=$id LENGTH_BODY=",length($$body), "\n";
-close $log;
         if($id==0)
         {   $self->_management_record($body);
             next;
@@ -184,9 +170,6 @@ close $log;
                 or $self->_fcgi_end_request(UNKNOWN_ROLE => $id);
             $data_complete  = $role ne 'FILTER';
             $stdin_complete = $role eq 'AUTHORIZER';
-open my $log, '>>', "/tmp/fcgi.$$.log";
-print $log "Request for role ROLE=$role\n";
-close $log;
             next;
         }
 
@@ -215,11 +198,6 @@ close $log;
     }
 
     my $p = eval { $self->_body2hash(\$params) };
-open my $log, '>>', "/tmp/fcgi.$$.log";
-use Data::Dumper;
-print $log "PARAMS ERROR $@" if $@;
-print $log "GOT REQUEST $req_id,\n", Dumper $p;
-close $log;
 
     my $expected_stdin = $p->{CONTENT_LENGTH} || 0;
     $expected_stdin == length $stdin
@@ -255,9 +233,6 @@ sub send_response($;$)
 
     my $req_id = $response->request->request_id;
 
-open my $log, '>>', "/tmp/fcgi.$$.log";
-print $log "RESPONSE=", "Status: ".$response->as_string(CRLF), "<<<<<<<<\n\n";
-close $log;
     $self->_reply_record(STDOUT => $req_id
       , 'Status: '.$response->as_string(CRLF));
     $self->_reply_record(STDOUT => $req_id, '');
@@ -366,10 +341,7 @@ sub _read_chunk($)
     while(length $$stdin < $need)
     {   $select->can_read or next;
 
-         my $bytes_read = sysread $self->socket, my $more, MAX_READ_CHUNKS, 0;
-open my $log, '>>', "/tmp/fcgi.$$.log";
-print $log "READ $need>>$more<<\n";
-close $log;
+        my $bytes_read = sysread $self->socket, my $more, MAX_READ_CHUNKS, 0;
         if(defined $bytes_read)
         {   $bytes_read or last;
             $$stdin .= $more;
