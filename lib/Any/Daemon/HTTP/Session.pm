@@ -15,6 +15,7 @@ use Socket         qw(inet_aton AF_INET AF_INET6 PF_INET PF_INET6);
 Any::Daemon::HTTP::Session - represents a client connection
 
 =chapter SYNOPSIS
+   # created by Any::Daemon::HTTP
 
 =chapter DESCRIPTION
 The connection relates to one client.  Each time, some browser connects
@@ -27,8 +28,6 @@ to cache information as well.
 
 =c_method new %options
 
-=requires client IO::Socket-client
-
 =option  store HASH
 =default store {}
 =cut
@@ -36,16 +35,7 @@ to cache information as well.
 sub new(%)  {my $class = shift; (bless {}, $class)->init({@_})}
 sub init($)
 {   my ($self, $args) = @_;
-    my $client = $args->{client} or panic;
-    my $store  = $self->{ADHC_store} = $args->{store} || {};
-
-    my $peer   = $store->{peer}    ||= {};
-    my $ip     = $peer->{ip}       ||= $client->peerhost;
-    if($client->sockdomain==PF_INET)
-    {   $peer->{host} = gethostbyaddr inet_aton($ip), AF_INET }
-    elsif($client->sockdomain==PF_INET6)
-    {   $peer->{host} = gethostbyaddr $ip, AF_INET6 }
-
+    $self->{ADHC_store} = $args->{store} || {};
     $self;
 }
 

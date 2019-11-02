@@ -9,6 +9,7 @@ version 0.29:
 	- explicit state protocol with new(protocol) begin HTTP or HTTPS.
 	- option to disable displaying processing info of childs in 'ps'.
 	- support FCGI connections.
+	- improve remote-host/-ip reporting.
 
 version 0.28: Wed 20 Mar 17:18:25 CET 2019
 

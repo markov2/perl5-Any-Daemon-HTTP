@@ -3,12 +3,12 @@
 # Copyright Mark Overmeer.  Licensed under the same terms as Perl itself.
 
 package Any::Daemon::HTTP;
-use base 'Any::Daemon';
+
+use Log::Report      'any-daemon-http';
+use parent 'Any::Daemon';
 
 use warnings;
 use strict;
-
-use Log::Report      'any-daemon-http';
 
 use Any::Daemon::HTTP::VirtualHost ();
 use Any::Daemon::HTTP::Session     ();
@@ -16,6 +16,7 @@ use Any::Daemon::HTTP::Proxy       ();
 
 use HTTP::Daemon     ();
 use HTTP::Status     qw/:constants :is/;
+use Socket           qw/inet_aton PF_INET AF_INET/;
 use IO::Socket       qw/SOCK_STREAM SOMAXCONN SOL_SOCKET SO_LINGER/;
 use IO::Socket::IP   ();
 use IO::Select       ();
@@ -554,23 +555,27 @@ sub _connection($$)
         ${*$conn}{httpd_daemon} = $self;
     }
 
-    my $session = $self->{ADH_session_class}->new(client => $client);
-    my $peer    = $session->get('peer');
-    my $host    = $peer->{host};
-    my $ip      = $peer->{ip};
-    info __x"new client from {host} on {ip}", host => $host // '(unnamed)',
-		ip => $ip;
+    my $ip   = $client->peerhost;
+    my $host =
+      ( $client->sockdomain == PF_INET
+      ? gethostbyaddr inet_aton($ip), AF_INET
+      : undef
+      ) || $ip;
+
+    my $session = $self->{ADH_session_class}->new;
+    $session->set(peer => { ip => $ip, host => $host });
+    info __x"new client from {host} on {ip}" , host => $host, ip => $ip;
 
     my $init_conn = $args->{new_connection};
     $self->$init_conn($session);
 
     # Change title in ps-table
     my $title = $0 =~ /^(\S+)/ ? basename($1) : $0;
-    $0        = $title . ' http from '. ($host||$ip);
+    $self->psTitle("$title http from $host");
 
     $SIG{ALRM} = sub {
         notice __x"connection from {host} lasted too long, killed after {time%d} seconds"
-          , host => ($host || $ip), time => $deadline - $start;
+          , host => $host, time => $deadline - $start;
         exit 0;
     };
 

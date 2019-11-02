@@ -13,6 +13,7 @@ use HTTP::Request ();
 use Time::HiRes   qw(usleep);
 use Errno         qw(EAGAIN EINTR EWOULDBLOCK);
 use IO::Select    ();
+use Socket        qw/inet_aton PF_INET AF_INET/;
 
 use Any::Daemon::FCGI::Request ();
 
@@ -217,10 +218,10 @@ sub get_request()
       , data   => \$data
       );
 
-    info __x"fcgi request by {host} for {url}"
-      , host => $request->param('REMOTE_ADDR')
-      , url  => $request->url;
+    my $remote_ip   = $request->param('REMOTE_ADDR');
+    my $remote_host = gethostbyaddr inet_aton($remote_ip), AF_INET;
 
+    info __x"fcgi request from {host}", host => $remote_host || $remote_ip;
     $request;
 }
 
