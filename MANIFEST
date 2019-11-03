@@ -3,6 +3,9 @@ MANIFEST
 Makefile.PL
 README.md
 examples/apache.pl
+lib/Any/Daemon/FCGI/Request.pm
+lib/Any/Daemon/FCGI/ClientConn.pm
+lib/Any/Daemon/FCGI.pm
 lib/Any/Daemon/HTTP.pm
 lib/Any/Daemon/HTTP/Directory.pm
 lib/Any/Daemon/HTTP/Proxy.pm

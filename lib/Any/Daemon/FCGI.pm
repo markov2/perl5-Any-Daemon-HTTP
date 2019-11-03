@@ -20,17 +20,18 @@ Any::Daemon::FCGI - serve the FCGI protocol
   my $http = Any::Daemon::HTTP->new
     ( listen    => 'www.example.com'
     , protocol  => 'FCGI'
+    , ...
     );
 
 =chapter DESCRIPTION
-The Fast CGI protocol connects a generic web-server (like Apache or NGinx)
-with an external daemon.  The communication reuses connections, and the
-server validates and throttle requests to the external daemon.  This module
-is the base for such external daemon.
+The Fast CGI protocol connects a generic front-end web-server (like
+Apache or NGinx) with an backe-end daemon.  The communication reuses
+connections.  The front-end server validates and throttles requests to
+the back-end daemon.  This module is the base for such back-end daemon.
 
 This module extends the network side of a socket.  During M<accept()>,
-each incoming connection will create an M<Any::Daemon::FCGI::ClientConn>
-object which handles the requests.
+each incoming connection will create a new
+M<Any::Daemon::FCGI::ClientConn> object which handles the requests.
 
 =chapter METHODS
 

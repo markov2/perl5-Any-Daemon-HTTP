@@ -68,6 +68,10 @@ Handles request from one single client in FCGI protocol.  This object
 gets initialized on any incoming connection by M<Any::Daemon::HTTP> when
 C<protocol=FCGI>.
 
+More than one request can be collected at any moment, and they will be
+processed once complete.  However, they will be processed in a single
+thread: they have to wait for another to complete.
+
 =chapter METHODS
 
 =c_method new %options
@@ -84,13 +88,15 @@ sub new($%) { (bless {}, $_[0])->init($_[1]) }
 
 sub init($)
 {   my ($self, $args) = @_;
-    $self->{ADFC_socket}    = my $socket = $args->{socket} or panic;
+    $self->{ADFC_requests}  = {};
     $self->{ADFC_max_conns} = $args->{max_childs} or panic;
     $self->{ADFC_max_reqs}  = $args->{max_childs};
-    $self->{_stdin}         = \my $stdin;
-    $self->{ADFC_select}    = my $select = IO::Select->new;
 
+    $self->{ADFC_select}    = my $select = IO::Select->new;
+    $self->{ADFC_socket}    = my $socket = $args->{socket} or panic;
+    $self->{_stdin}         = \my $stdin;
     $select->add($socket);
+
     $self;
 }
 
@@ -154,83 +160,103 @@ incoming stream are handled as well.
 
 sub get_request()
 {   my $self = shift;
+    my $requests = $self->{ADFC_requests};
+    my $reqdata;
 
     ### At the moment, we will only support processing of whole requests
     #   and full replies: no chunking inside the server.
 
-    my ($req_id, $role);
-    my ($params, $params_complete) = ('', 0);
-    my ($stdin,  $stdin_complete ) = ('', 0);
-    my ($data,   $data_complete  ) = ('', 0);
-
-    until($params_complete && $stdin_complete && $data_complete)
-    {
-        my ($type, $id, $body) = $self->_next_record
+    while(1)
+    {   my ($type, $req_id, $body) = $self->_next_record
             or return;
 
-        if($id==0)
+        if($req_id==0)
         {   $self->_management_record($body);
             next;
         }
 
         if($type eq 'BEGIN_REQUEST')
-        {   $req_id = $self->{ADFC_req_id} = $id;
-            my ($role_id, $flags) = unpack 'nC', $$body;
-            $role = $server_role_id2name{$role_id}
-                or $self->_fcgi_end_request(UNKNOWN_ROLE => $id);
-            $data_complete  = $role ne 'FILTER';
-            $stdin_complete = $role eq 'AUTHORIZER';
+        {   my ($role_id, $flags) = unpack 'nC', $$body;
+            my $role = $server_role_id2name{$role_id}
+                or $self->_fcgi_end_request(UNKNOWN_ROLE => $req_id);
+
+            $requests->{$req_id} =
+              { request_id      => $req_id
+              , data_complete   => $role ne 'FILTER'
+              , stdin_complete  => $role eq 'AUTHORIZER'
+              , params_complete => 0
+              , role            => $role
+              , params          => undef,
+              , stdin           => undef,
+              , data            => undef,
+              };
+
             next;
         }
 
         defined $req_id or panic;
-        if($id != $req_id)
-        {   $self->_fcgi_end_request(CANT_MPX_CONN => $id);
+        $reqdata = $requests->{$req_id};
+        unless($reqdata)
+        {   notice __x"fcgi received {type} for {id} which does not exist now"
+              , type => $type, id => $req_id;
             next;
         }
 
         if($type eq 'ABORT_REQUEST')
-        {   undef $req_id;
-            $stdin = '';
+        {   delete $requests->{$req_id};
         }
         elsif($type eq 'PARAMS')
-        {   if(length $$body) { $params .= $$body }
-            else { $params_complete = 1 }
+        {   if(length $$body) { $reqdata->{params} .= $$body }
+            else { $reqdata->{params_complete} = 1 }
         }
         elsif($type eq 'STDIN')  # Not for Authorizer
-        {   if(length $$body) { $stdin  .= $$body }
-            else { $stdin_complete = 1 }
+        {   if(length $$body) { $reqdata->{stdin}  .= $$body }
+            else { $reqdata->{stdin_complete} = 1 }
         }
         elsif($type eq 'DATA')   # Filter only
-        {   if(length $$body) { $data   .= $$body }
-            else { $data_complete = 1 }
+        {   if(length $$body) { $reqdata->{data}   .= $$body }
+            else { $reqdata->{data_complete} = 1 }
         }
+
+        last if $reqdata->{params_complete}
+             && $reqdata->{stdin_complete}
+             && $reqdata->{data_complete};
     }
 
-    my $p = eval { $self->_body2hash(\$params) };
+    # We still have this record in $reqdata
+    my $req_id = $reqdata->{request_id};
+    delete $requests->{$req_id};
+
+    my $enc_params = delete $reqdata->{params};
+    my $p = $reqdata->{params} = eval { $self->_body2hash(\$enc_params) };
+    if($@)
+    {    notice __x"fcgi {id} params error: {err}", id => $req_id, err => $@;
+         delete $requests->{$req_id};
+         return $self->get_request;
+    }
 
     my $expected_stdin = $p->{CONTENT_LENGTH} || 0;
-    $expected_stdin == length $stdin
-        or error __x"fcgi received {got} bytes on stdin, expected {need} bytes",
-            got => length $stdin, need => $expected_stdin;
+    $expected_stdin == length $reqdata->{stdin}
+        or error __x"fcgi {id} received {got} bytes on stdin, expected {need}"
+             , id   => $req_id
+             , got  => length $reqdata->{stdin}
+             , need => $expected_stdin;
 
     my $expected_data = $p->{FCGI_DATA_LENGTH} || 0;
-    $expected_data == length $data
-        or error __x"fcgi received {got} bytes for data, expected {need} bytes",
-            got => length $data, need => $expected_data;
+    $expected_data == length $reqdata->{data}
+        or error __x"fcgi {id} received {got} bytes for data, expected {need}"
+            , id   => $req_id
+            , got  => length $reqdata->{data}
+            , need => $expected_data;
 
-    my $request = Any::Daemon::FCGI::Request->new
-      ( request_id => $req_id
-      , role   => $role
-      , params => $p
-      , stdin  => \$stdin
-      , data   => \$data
-      );
+    my $request     = Any::Daemon::FCGI::Request->new($reqdata);
 
     my $remote_ip   = $request->param('REMOTE_ADDR');
     my $remote_host = gethostbyaddr inet_aton($remote_ip), AF_INET;
+    info __x"fcgi {id} request from {host}"
+      , id   => $req_id
+      , host => $remote_host || $remote_ip;
 
-    info __x"fcgi request from {host}", host => $remote_host || $remote_ip;
     $request;
 }
 

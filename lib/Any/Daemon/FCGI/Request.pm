@@ -14,21 +14,32 @@ use Log::Report      'any-daemon-http';
 Any::Daemon::FCGI::Request - HTTP::Request with little extras
 
 =chapter SYNOPSIS
+# Instantiated by Any::Daemon::FCGI::ClientConn
 
 =chapter DESCRIPTION
+In the FCGI protocol, the web-site user's HTTP request is accompanied
+by some additional information about the front-end web-server.  Also,
+the headers are processed into parameters C<HTTP_*> and the body is
+fed to STDIN.  The first thing this FCGI implementation does, is
+undoing this mutilation: bringing back a M<HTTP::Request>.  The
+additional information is provided via some additional attributes.
 
 =chapter METHODS
 
 =c_method new %options
+Create a new request object.  This method is called by
+M<Any::Daemon::FCGI::ClientConn> each time it has collected all the data
+for a new incoming message.  You probably should not call this yourself.
 
 =requires request_id INTEGER
-Sequence number as used in the FCGI protocol (always > 0, may get reused).
+Sequence number as used in the FCGI protocol (always > 0, will get reused).
 
 =requires params HASH
 The parameters received from the client.
 
 =requires stdin SCALAR
-(Ref to string), the body of the message.
+(Ref to string), the body of the message.  We use references to avoid
+copying huge strings.
 
 =requires role 'RESPONDER'|'AUTHORIZER'|'FILTER'
 
@@ -37,10 +48,10 @@ The parameters received from the client.
 
 =cut
 
-sub new(%)
-{   my ($class, %args) = @_;
-    my $params = $args{params} or panic;
-    my $role   = $args{role}   or panic;
+sub new($)
+{   my ($class, $args) = @_;
+    my $params = $args->{params} or panic;
+    my $role   = $args->{role}   or panic;
  
     my @headers;
  
@@ -61,15 +72,15 @@ sub new(%)
       ( $params->{REQUEST_METHOD}
       , $params->{REQUEST_URI}
       , \@headers
-      , $args{stdin}
+      , $args->{stdin}
       );
 
     $self->protocol($params->{SERVER_PROTOCOL});
 
-    $self->{ADFR_reqid}  = $args{request_id} or panic;
+    $self->{ADFR_reqid}  = $args->{request_id} or panic;
     $self->{ADFR_params} = $params;
     $self->{ADFR_role}   = $role;
-    $self->{ADFR_data}   = $args{data};
+    $self->{ADFR_data}   = $args->{data};
 
     $self;
 }
