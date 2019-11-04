@@ -13,12 +13,13 @@ use HTTP::Request ();
 use Time::HiRes   qw(usleep);
 use Errno         qw(EAGAIN EINTR EWOULDBLOCK);
 use IO::Select    ();
-use Socket        qw/inet_aton PF_INET AF_INET/;
+use Socket        qw/inet_aton PF_INET AF_INET SHUT_RD SHUT_WR/;
 
 use Any::Daemon::FCGI::Request ();
 
 use constant
   { FCGI_VERSION    => 1
+  , FCGI_KEEP_CONN  => 1    # flag bit
   , MAX_FRAME_SEND  => 32 * 1024   # may have 65535 bytes content
   , MAX_READ_CHUNKS => 16 * 1024
   , CRLF            => "\x0D\x0A"
@@ -94,7 +95,8 @@ sub init($)
 
     $self->{ADFC_select}    = my $select = IO::Select->new;
     $self->{ADFC_socket}    = my $socket = $args->{socket} or panic;
-    $self->{_stdin}         = \my $stdin;
+    $self->{ADFC_stdin}     = \my $stdin;
+    $self->{ADFC_keep_conn} = 0;
     $select->add($socket);
 
     $self;
@@ -191,6 +193,13 @@ sub get_request()
               , data            => undef,
               };
 
+            unless($flags & FCGI_KEEP_CONN)
+            {   # Actually, this flag is incorrectly: more threads may still be
+                # active.  So, let's close when they all have ceased to exist.
+                info __x"fcgi {id} is last request", id => $req_id;
+                $self->{ADFC_keep_conn} = 0;
+            }
+
             next;
         }
 
@@ -257,6 +266,9 @@ sub get_request()
       , id   => $req_id
       , host => $remote_host || $remote_ip;
 
+    $self->keep_connection
+        or $self->socket->shutdown(SHUT_RD);
+
     $request;
 }
 
@@ -281,6 +293,16 @@ sub send_response($;$)
     }
 
     $self->_fcgi_end_request(REQUEST_COMPLETE => $req_id);
+
+    $self->keep_connection
+        or $self->socket->shutdown(SHUT_WR);
+
+    $self;
+}
+
+sub keep_connection()
+{   my $self = shift;
+    $self->{ADFC_keep_conn} || keys %{$self->{ADFC_requests}}
 }
 
 #### MANAGEMENT RECORDS
@@ -375,7 +397,7 @@ sub _take_encoded_nv($)
 
 sub _read_chunk($)
 {   my ($self, $need) = @_;
-    my $stdin = $self->{_stdin};
+    my $stdin = $self->{ADFC_stdin};
 
     return substr $$stdin, 0, $need, ''
        if length $$stdin > $need;
