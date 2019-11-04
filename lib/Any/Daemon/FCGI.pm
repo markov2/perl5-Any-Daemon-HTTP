@@ -17,6 +17,7 @@ Any::Daemon::FCGI - serve the FCGI protocol
 
 =chapter SYNOPSIS
 
+  use Any::Daemon::HTTP 0.29;
   my $http = Any::Daemon::HTTP->new
     ( listen    => 'www.example.com'
     , protocol  => 'FCGI'
@@ -32,6 +33,12 @@ the back-end daemon.  This module is the base for such back-end daemon.
 This module extends the network side of a socket.  During M<accept()>,
 each incoming connection will create a new
 M<Any::Daemon::FCGI::ClientConn> object which handles the requests.
+
+B<Warning:> the session object lives during the whole client connection,
+which may contain requests from different customers.
+
+B<Warning:> this code is new (nov 2019) and only tested with Apache 2.4.
+Please report success (and bug-fixes) for other front-end servers.
 
 =chapter METHODS
 

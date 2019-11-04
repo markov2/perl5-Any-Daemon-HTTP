@@ -32,7 +32,7 @@ M<Any::Daemon::FCGI::ClientConn> each time it has collected all the data
 for a new incoming message.  You probably should not call this yourself.
 
 =requires request_id INTEGER
-Sequence number as used in the FCGI protocol (always > 0, will get reused).
+Sequence number as used in the FCGI protocol (always E<gt> 0, will get reused).
 
 =requires params HASH
 The parameters received from the client.
@@ -43,7 +43,8 @@ copying huge strings.
 
 =requires role 'RESPONDER'|'AUTHORIZER'|'FILTER'
 
-=option data SCALAR
+=option  data SCALAR
+=default data C<undef>
 (Ref to string), the additional data for FILTER requests.
 
 =cut

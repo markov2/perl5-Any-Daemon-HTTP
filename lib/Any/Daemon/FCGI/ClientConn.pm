@@ -77,10 +77,10 @@ thread: they have to wait for another to complete.
 
 =c_method new %options
 
-=required socket M<IO::Socket::IP>
+=requires socket M<IO::Socket::IP>
 Our client socket, for incoming traffic.
 
-=required max_childs INTEGER
+=requires max_childs INTEGER
 The number of processes which are started in this back-end server.  We do
 not want more than this number of requests from the front-end server.
 =cut
