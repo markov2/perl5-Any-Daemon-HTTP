@@ -14,4 +14,5 @@ lib/Any/Daemon/HTTP/Source.pm
 lib/Any/Daemon/HTTP/UserDirs.pm
 lib/Any/Daemon/HTTP/VirtualHost.pm
 t/01use.t
+t/10clean_uri.t
 xt/99pod.t
